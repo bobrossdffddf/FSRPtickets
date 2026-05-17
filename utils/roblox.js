@@ -1,42 +1,68 @@
 /**
- * Roblox helpers.
+ * Roblox / Melonly helpers.
  *
  * Flow:
- *   1. Bloxlink API → resolve Discord user ID → Roblox user ID
- *   2. Roblox Users API → username / display name / created date
+ *   1. Melonly API  → GET /api/v1/server/members/discord/{discordId}
+ *                     Returns: { id, roles, createdAt, serverId }
+ *                     The `id` field is the member's linked Roblox user ID.
+ *
+ *   2. Roblox Users API     → username / displayName / account created date
  *   3. Roblox Thumbnails API → headshot avatar URL
  *
- * Requires:  BLOXLINK_API_KEY  in .env
- * Get your key at:  https://blox.link/dashboard/developer
+ * Requires:  MELONLY_API_KEY  in .env
+ * Get your key at:  Melonly Dashboard → Panel Settings → API Token
  */
 const fetch = require('node-fetch');
-const cfg   = require('../config.json');
 
-const BLOXLINK_BASE = 'https://api.blox.link/v4/public';
+const MELONLY_BASE  = 'https://api.melonly.xyz/api/v1';
 const ROBLOX_USERS  = 'https://users.roblox.com/v1/users';
 const ROBLOX_THUMB  = 'https://thumbnails.roblox.com/v1/users/avatar-headshot';
 
 /**
- * Resolve a Discord user ID → Roblox account info via Bloxlink.
- * Returns null (never throws) so callers can still create tickets.
+ * Resolve a Discord user ID → full Roblox account info via the Melonly API.
+ * Returns null (never throws) so callers can still create tickets without it.
  *
  * @param {string} discordUserId
- * @returns {Promise<{id:string, username:string, displayName:string, created:string, avatarUrl:string}|null>}
+ * @returns {Promise<{
+ *   id: string,
+ *   username: string,
+ *   displayName: string,
+ *   created: string,
+ *   avatarUrl: string|null,
+ *   profileUrl: string,
+ *   melonlyRoles: string[],
+ *   melonlyJoined: string,
+ * }|null>}
  */
 async function getRobloxInfo(discordUserId) {
     try {
-        // ── Step 1: Bloxlink lookup ──────────────────────────────────────────
-        const bloxRes = await fetch(
-            `${BLOXLINK_BASE}/guilds/${cfg.guildId}/discord-to-roblox/${discordUserId}`,
-            { headers: { Authorization: process.env.BLOXLINK_API_KEY } }
+        // ── Step 1: Melonly member lookup (Discord ID → Melonly member record) ─
+        const melRes = await fetch(
+            `${MELONLY_BASE}/server/members/discord/${discordUserId}`,
+            {
+                headers: {
+                    Authorization: `Bearer ${process.env.MELONLY_API_KEY}`,
+                    'Content-Type': 'application/json',
+                },
+            }
         );
-        if (!bloxRes.ok) return null;
-        const bloxData = await bloxRes.json();
-        const robloxId = bloxData.robloxID ?? bloxData.resolved?.roblox?.id;
+
+        if (!melRes.ok) return null;
+        const melData = await melRes.json();
+
+        // `id` is the Roblox user ID stored by Melonly upon verification
+        const robloxId     = melData.id;
+        const melonlyRoles = melData.roles ?? [];
+        const melonlyJoinedAt = melData.createdAt
+            ? new Date(melData.createdAt * 1000).toLocaleDateString('en-US', {
+                month: 'long', day: 'numeric', year: 'numeric',
+              })
+            : 'Unknown';
+
         if (!robloxId) return null;
 
-        // ── Step 2: User info ────────────────────────────────────────────────
-        const userRes  = await fetch(`${ROBLOX_USERS}/${robloxId}`);
+        // ── Step 2: Roblox user info ─────────────────────────────────────────
+        const userRes = await fetch(`${ROBLOX_USERS}/${robloxId}`);
         if (!userRes.ok) return null;
         const user = await userRes.json();
 
@@ -50,21 +76,25 @@ async function getRobloxInfo(discordUserId) {
             avatarUrl   = thumb?.data?.[0]?.imageUrl ?? null;
         }
 
-        const created = new Date(user.created);
+        // ── Format account age ───────────────────────────────────────────────
+        const created    = new Date(user.created);
         const createdStr = created.toLocaleDateString('en-US', {
-            month: 'long', day: 'numeric', year: 'numeric'
+            month: 'long', day: 'numeric', year: 'numeric',
         });
-        const yearsAgo = Math.floor((Date.now() - created) / (1000 * 60 * 60 * 24 * 365));
+        const yearsAgo = Math.floor((Date.now() - created.getTime()) / (1000 * 60 * 60 * 24 * 365));
 
         return {
-            id:          String(robloxId),
-            username:    user.name,
-            displayName: user.displayName,
-            created:     `${createdStr} (${yearsAgo} year${yearsAgo !== 1 ? 's' : ''} ago)`,
+            id:             String(robloxId),
+            username:       user.name,
+            displayName:    user.displayName,
+            created:        `${createdStr} (${yearsAgo} year${yearsAgo !== 1 ? 's' : ''} ago)`,
             avatarUrl,
-            profileUrl:  `https://www.roblox.com/users/${robloxId}/profile`,
+            profileUrl:     `https://www.roblox.com/users/${robloxId}/profile`,
+            melonlyRoles,
+            melonlyJoined:  melonlyJoinedAt,
         };
-    } catch {
+    } catch (err) {
+        console.error('[getRobloxInfo] Error:', err?.message ?? err);
         return null;
     }
 }

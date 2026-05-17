@@ -6,7 +6,7 @@
 
 - **Node.js 18+** — [nodejs.org](https://nodejs.org)
 - A **Discord Bot** created at [discord.com/developers](https://discord.com/developers/applications)
-- A **Bloxlink API key** — [blox.link/dashboard/developer](https://blox.link/dashboard/developer)
+- A **Melonly API key** — Melonly Dashboard → Panel Settings → API Token
 
 ---
 
@@ -45,11 +45,10 @@ Create a file called `.env` in the `fsrp-ticketbot` folder:
 ```
 BOT_TOKEN=paste_your_bot_token_here
 CLIENT_ID=paste_your_application_id_here
-BLOXLINK_API_KEY=paste_your_bloxlink_api_key_here
+MELONLY_API_KEY=paste_your_melonly_api_key_here
 ```
 
-> **Bloxlink API Key:** Sign in at blox.link → Dashboard → Developer → Create API Key
-> Set the server to your FSRP guild.
+> **Melonly API Key:** Sign in at [melonly.xyz](https://melonly.xyz) → Dashboard → Panel Settings → API Token. Make sure the token is scoped to your FSRP server.
 
 ---
 
@@ -169,7 +168,7 @@ Or host on a VPS / server (DigitalOcean, Hetzner, etc.).
 → Run `npm run deploy` again. It can take up to 1 hour to propagate globally (guild commands are instant).
 
 **Roblox info not showing in tickets:**
-→ Check your `BLOXLINK_API_KEY`. Make sure the API key is scoped to your guild ID.
+→ Check your `MELONLY_API_KEY` in `.env`. Make sure the API token is generated from your FSRP server's Panel Settings in the Melonly dashboard, and that the ticket opener has verified their Roblox account through Melonly.
 
 **Transcript channel is empty:**
 → Make sure the bot has `Send Messages` + `Attach Files` permissions in your transcripts channel.
