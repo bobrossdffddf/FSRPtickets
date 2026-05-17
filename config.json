@@ -1,0 +1,30 @@
+{
+  "guildId": "1487127237584224441",
+
+  "roles": {
+    "staff":       "1487127237898666070",
+    "highRank":    "1487127238058180810",
+    "foundership": "1487127238141935635"
+  },
+
+  "channels": {
+    "transcripts": "1487127239945621611"
+  },
+
+  "categories": {
+    "general":     "1501036273916444853",
+    "highRank":    "1501037177918853220",
+    "foundership": "1487165830826561737"
+  },
+
+  "dismissRoleId": "1487127238058180810",
+
+  "colors": {
+    "main":        "#1565C0",
+    "highRank":    "#E65100",
+    "foundership": "#B71C1C",
+    "success":     "#1B5E20",
+    "warning":     "#F57F17",
+    "neutral":     "#263238"
+  }
+}
