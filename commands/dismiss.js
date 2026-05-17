@@ -2,7 +2,7 @@
  * /dismiss  — Force-unclaims a ticket.
  * Only usable by members with the High Rank role (1487127238058180810).
  */
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 const cfg                   = require('../config.json');
 const { getTicket, saveTicket } = require('../utils/db');
 
@@ -29,7 +29,7 @@ module.exports = {
         if (!hasPermission) {
             return interaction.reply({
                 content: `${E.alert} You do not have permission to use this command. High Rank or above required.`,
-                ephemeral: true,
+                flags: MessageFlags.Ephemeral,
             });
         }
 
@@ -37,14 +37,14 @@ module.exports = {
         if (!ticket) {
             return interaction.reply({
                 content: `${E.alert} This command can only be used inside a ticket channel.`,
-                ephemeral: true,
+                flags: MessageFlags.Ephemeral,
             });
         }
 
         if (!ticket.claimedBy) {
             return interaction.reply({
                 content: `${E.cross} This ticket is not currently claimed.`,
-                ephemeral: true,
+                flags: MessageFlags.Ephemeral,
             });
         }
 

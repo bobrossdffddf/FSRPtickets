@@ -2,7 +2,7 @@
  * /rename <name>  — Renames the current ticket channel.
  * Usable by staff or the ticket opener.
  */
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 const cfg            = require('../config.json');
 const { getTicket }  = require('../utils/db');
 
@@ -29,7 +29,7 @@ module.exports = {
         if (!ticket) {
             return interaction.reply({
                 content: `${E.alert} This command can only be used inside a ticket channel.`,
-                ephemeral: true,
+                flags: MessageFlags.Ephemeral,
             });
         }
 
@@ -41,7 +41,7 @@ module.exports = {
         if (!isStaff && interaction.user.id !== ticket.openerId) {
             return interaction.reply({
                 content: `${E.alert} Only staff members or the ticket opener can rename this ticket.`,
-                ephemeral: true,
+                flags: MessageFlags.Ephemeral,
             });
         }
 

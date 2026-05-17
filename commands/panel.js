@@ -9,6 +9,7 @@ const {
     StringSelectMenuBuilder,
     StringSelectMenuOptionBuilder,
     PermissionFlagsBits,
+    MessageFlags,
 } = require('discord.js');
 const cfg = require('../config.json');
 
@@ -30,7 +31,7 @@ module.exports = {
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
 
     async execute(interaction) {
-        await interaction.deferReply({ ephemeral: true });
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
         const embed = new EmbedBuilder()
             .setColor(cfg.colors.main)

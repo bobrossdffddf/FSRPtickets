@@ -9,6 +9,7 @@ const {
     ButtonBuilder,
     ButtonStyle,
     AttachmentBuilder,
+    MessageFlags,
 } = require('discord.js');
 const cfg               = require('../config.json');
 const { getTicket }     = require('../utils/db');
@@ -30,7 +31,7 @@ module.exports = {
     async execute(interaction) {
         const ticket = getTicket(interaction.channelId);
         if (!ticket) {
-            return interaction.reply({ content: `${E.alert} This command can only be used inside a ticket channel.`, ephemeral: true });
+            return interaction.reply({ content: `${E.alert} This command can only be used inside a ticket channel.`, flags: MessageFlags.Ephemeral });
         }
 
         // ── Permission check: opener, claimer, or staff role ──────────────────
@@ -42,7 +43,7 @@ module.exports = {
         const isClaimer  = interaction.user.id === ticket.claimedBy;
 
         if (!isStaff && !isOpener && !isClaimer) {
-            return interaction.reply({ content: `${E.alert} You do not have permission to close this ticket.`, ephemeral: true });
+            return interaction.reply({ content: `${E.alert} You do not have permission to close this ticket.`, flags: MessageFlags.Ephemeral });
         }
 
         // ── Confirmation embed ────────────────────────────────────────────────

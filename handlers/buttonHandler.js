@@ -14,6 +14,7 @@ const {
     EmbedBuilder,
     AttachmentBuilder,
     PermissionFlagsBits,
+    MessageFlags,
 } = require('discord.js');
 const cfg                    = require('../config.json');
 const { getTicket, saveTicket, deleteTicket } = require('../utils/db');
@@ -42,14 +43,14 @@ async function handleButton(interaction) {
     // ── Claim ─────────────────────────────────────────────────────────────────
     if (customId === 'claim_ticket') {
         const ticket = getTicket(channel.id);
-        if (!ticket) return interaction.reply({ content: `${E.alert} Not a ticket channel.`, ephemeral: true });
+        if (!ticket) return interaction.reply({ content: `${E.alert} Not a ticket channel.`, flags: MessageFlags.Ephemeral });
 
         // Only staff can claim
         const isStaff = member.roles.cache.has(cfg.roles.staff) ||
                         member.roles.cache.has(cfg.roles.highRank) ||
                         member.roles.cache.has(cfg.roles.foundership);
         if (!isStaff) {
-            return interaction.reply({ content: `${E.alert} Only staff members can claim tickets.`, ephemeral: true });
+            return interaction.reply({ content: `${E.alert} Only staff members can claim tickets.`, flags: MessageFlags.Ephemeral });
         }
 
         if (ticket.claimedBy) {
@@ -58,7 +59,7 @@ async function handleButton(interaction) {
                     .setColor(cfg.colors.warning)
                     .setDescription(`${E.alert} This ticket is already claimed by <@${ticket.claimedBy}>.`)
                 ],
-                ephemeral: true,
+                flags: MessageFlags.Ephemeral,
             });
         }
 
@@ -94,10 +95,10 @@ async function handleButton(interaction) {
     // ── Unclaim ───────────────────────────────────────────────────────────────
     else if (customId === 'unclaim_ticket') {
         const ticket = getTicket(channel.id);
-        if (!ticket) return interaction.reply({ content: `${E.alert} Not a ticket channel.`, ephemeral: true });
+        if (!ticket) return interaction.reply({ content: `${E.alert} Not a ticket channel.`, flags: MessageFlags.Ephemeral });
 
         if (!ticket.claimedBy) {
-            return interaction.reply({ content: `${E.cross} This ticket is not currently claimed.`, ephemeral: true });
+            return interaction.reply({ content: `${E.cross} This ticket is not currently claimed.`, flags: MessageFlags.Ephemeral });
         }
 
         // Only the claimer or HR+ can unclaim
@@ -106,7 +107,7 @@ async function handleButton(interaction) {
         if (ticket.claimedBy !== user.id && !isHR) {
             return interaction.reply({
                 content: `${E.alert} Only the person who claimed this ticket (or High Rank+) can unclaim it.`,
-                ephemeral: true,
+                flags: MessageFlags.Ephemeral,
             });
         }
 
@@ -134,14 +135,14 @@ async function handleButton(interaction) {
     // ── Close (button shortcut — shows same confirm as /close) ────────────────
     else if (customId === 'close_ticket') {
         const ticket = getTicket(channel.id);
-        if (!ticket) return interaction.reply({ content: `${E.alert} Not a ticket channel.`, ephemeral: true });
+        if (!ticket) return interaction.reply({ content: `${E.alert} Not a ticket channel.`, flags: MessageFlags.Ephemeral });
 
         const isStaff = member.roles.cache.has(cfg.roles.staff) ||
                         member.roles.cache.has(cfg.roles.highRank) ||
                         member.roles.cache.has(cfg.roles.foundership);
         const isOpener = user.id === ticket.openerId;
         if (!isStaff && !isOpener) {
-            return interaction.reply({ content: `${E.alert} You do not have permission to close this ticket.`, ephemeral: true });
+            return interaction.reply({ content: `${E.alert} You do not have permission to close this ticket.`, flags: MessageFlags.Ephemeral });
         }
 
         const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
@@ -169,7 +170,7 @@ async function handleButton(interaction) {
                 .setStyle(ButtonStyle.Secondary),
         );
 
-        await interaction.reply({ embeds: [confirmEmbed], components: [row], ephemeral: true });
+        await interaction.reply({ embeds: [confirmEmbed], components: [row], flags: MessageFlags.Ephemeral });
     }
 
     // ── Confirm close ─────────────────────────────────────────────────────────
@@ -257,13 +258,13 @@ async function handleButton(interaction) {
     // ── Close request — Opener accepts ────────────────────────────────────────
     else if (customId === 'closereq_accept') {
         const ticket = getTicket(channel.id);
-        if (!ticket) return interaction.reply({ content: `${E.alert} Not a ticket channel.`, ephemeral: true });
+        if (!ticket) return interaction.reply({ content: `${E.alert} Not a ticket channel.`, flags: MessageFlags.Ephemeral });
 
         // Only the opener can accept
         if (user.id !== ticket.openerId) {
             return interaction.reply({
                 content: `${E.alert} Only the ticket opener can respond to this close request.`,
-                ephemeral: true,
+                flags: MessageFlags.Ephemeral,
             });
         }
 
@@ -316,12 +317,12 @@ async function handleButton(interaction) {
     // ── Close request — Opener denies ─────────────────────────────────────────
     else if (customId === 'closereq_deny') {
         const ticket = getTicket(channel.id);
-        if (!ticket) return interaction.reply({ content: `${E.alert} Not a ticket channel.`, ephemeral: true });
+        if (!ticket) return interaction.reply({ content: `${E.alert} Not a ticket channel.`, flags: MessageFlags.Ephemeral });
 
         if (user.id !== ticket.openerId) {
             return interaction.reply({
                 content: `${E.alert} Only the ticket opener can respond to this close request.`,
-                ephemeral: true,
+                flags: MessageFlags.Ephemeral,
             });
         }
 

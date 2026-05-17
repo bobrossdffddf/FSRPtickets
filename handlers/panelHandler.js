@@ -18,6 +18,7 @@ const {
     ButtonStyle,
     ChannelType,
     PermissionFlagsBits,
+    MessageFlags,
 } = require('discord.js');
 const cfg              = require('../config.json');
 const { getRobloxInfo }    = require('../utils/roblox');
@@ -80,7 +81,7 @@ async function handlePanelSelect(interaction) {
                 )
                 .setFooter({ text: 'Florida State Roleplay  •  Ticket System' })
             ],
-            ephemeral: true,
+            flags: MessageFlags.Ephemeral,
         });
     }
 
@@ -96,9 +97,7 @@ async function handlePanelSelect(interaction) {
                     .setCustomId('reason')
                     .setLabel('What do you need assistance with?')
                     .setStyle(TextInputStyle.Paragraph)
-                    .setPlaceholder(
-                        'Please be as detailed as possible. Include any relevant information such as usernames, dates, and what happened.'
-                    )
+                    .setPlaceholder('Be detailed — include usernames, dates, and what happened.')
                     .setRequired(true)
                     .setMinLength(20)
                     .setMaxLength(1000)
@@ -128,7 +127,7 @@ async function handlePanelSelect(interaction) {
                 .setMaxValues(1)
         );
 
-        await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
+        await interaction.reply({ embeds: [embed], components: [row], flags: MessageFlags.Ephemeral });
     }
 }
 
@@ -137,7 +136,7 @@ async function handlePanelSelect(interaction) {
 // ─────────────────────────────────────────────────────────────────────────────
 async function handleUserSelect(interaction) {
     const reportedUser = interaction.users.first();
-    if (!reportedUser) return interaction.reply({ content: `${E.alert} No user selected.`, ephemeral: true });
+    if (!reportedUser) return interaction.reply({ content: `${E.alert} No user selected.`, flags: MessageFlags.Ephemeral });
 
     // Store for modal phase
     pendingReports.set(interaction.user.id, {
@@ -156,9 +155,7 @@ async function handleUserSelect(interaction) {
                 .setCustomId('reason')
                 .setLabel(`Why are you reporting ${reportedUser.username}?`)
                 .setStyle(TextInputStyle.Paragraph)
-                .setPlaceholder(
-                    'Describe the incident in detail. Include timestamps, witnesses, and any evidence (screenshots can be shared in the ticket).'
-                )
+                .setPlaceholder('Include timestamps, witnesses, and evidence. Screenshots can be shared in the ticket.')
                 .setRequired(true)
                 .setMinLength(20)
                 .setMaxLength(1000)
@@ -172,7 +169,7 @@ async function handleUserSelect(interaction) {
 // General support modal submit → create ticket
 // ─────────────────────────────────────────────────────────────────────────────
 async function handleGeneralModal(interaction) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const reason = interaction.fields.getTextInputValue('reason');
     await createTicket(interaction, 'general', reason, null);
 }
@@ -181,7 +178,7 @@ async function handleGeneralModal(interaction) {
 // Staff report modal submit → create ticket
 // ─────────────────────────────────────────────────────────────────────────────
 async function handleStaffReportModal(interaction) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const reason       = interaction.fields.getTextInputValue('reason');
     const pending      = pendingReports.get(interaction.user.id);
     if (!pending) {
