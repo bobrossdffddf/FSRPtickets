@@ -26,5 +26,15 @@
     "success":     "#1B5E20",
     "warning":     "#F57F17",
     "neutral":     "#263238"
+  },
+
+  "images": {
+    "panelThumbnail": "REPLACE_WITH_PANEL_THUMBNAIL_URL",
+    "panelFooterIcon": "REPLACE_WITH_FOOTER_IMAGE_URL"
+  },
+
+  "transcriptServer": {
+    "port": 3000,
+    "publicUrl": "http://localhost:3000"
   }
 }

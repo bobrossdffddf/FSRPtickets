@@ -1,20 +1,55 @@
 const {
     EmbedBuilder,
     AttachmentBuilder,
-    PermissionFlagsBits,
+    ModalBuilder,
+    TextInputBuilder,
+    TextInputStyle,
+    ActionRowBuilder,
+    ButtonBuilder,
+    ButtonStyle,
     MessageFlags,
 } = require('discord.js');
 
 const cfg = require('../config.json');
 const { getTicket, saveTicket, deleteTicket } = require('../utils/db');
 const { generateTranscript } = require('../utils/transcript');
-const { buildEmbed } = require('./panelHandler');
+const { buildEmbed, buildButtons } = require('./panelHandler');
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper — rebuild the pinned embed + buttons and edit the message in-place
+// ─────────────────────────────────────────────────────────────────────────────
+async function _refreshPinnedEmbed(channel, ticket) {
+    if (!ticket.openingMessageId) return;
+    const pinned = await channel.messages.fetch(ticket.openingMessageId).catch(() => null);
+    if (!pinned) return;
+
+    const updated = buildEmbed({
+        opener:       { id: ticket.openerId, username: ticket.openerTag },
+        roblox:       ticket.roblox,
+        robloxUsername: ticket.robloxUsername,
+        reason:       ticket.reason,
+        type:         ticket.type,
+        padNum:       String(ticket.ticketNumber).padStart(4, '0'),
+        reportedInfo: ticket.reportedUserId
+            ? { userId: ticket.reportedUserId, tag: ticket.reportedUserTag }
+            : (ticket.reportedUserTag ? { userId: null, tag: ticket.reportedUserTag } : null),
+        claimed:      ticket.claimedBy,
+    });
+
+    await pinned.edit({
+        embeds:     [updated],
+        components: [buildButtons(ticket)],  // toggle label/style reflects new claim state
+    }).catch(err => console.error('[Ticket] Failed to refresh pinned embed:', err?.message));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Button handler
+// ─────────────────────────────────────────────────────────────────────────────
 async function handleButton(interaction) {
-    const { customId, channel, user, member, guild } = interaction;
+    const { customId, channel, user, member } = interaction;
 
-    // ── Claim ─────────────────────────────────────────────────────────────────
-    if (customId === 'claim_ticket') {
+    // ── Toggle Claim / Unclaim ────────────────────────────────────────────────
+    if (customId === 'toggle_claim_ticket') {
         const ticket = getTicket(channel.id);
         if (!ticket) return interaction.reply({ content: 'Not a ticket channel.', flags: MessageFlags.Ephemeral });
 
@@ -23,96 +58,58 @@ async function handleButton(interaction) {
                         member.roles.cache.has(cfg.roles.foundership);
         if (!isStaff) return interaction.reply({ content: 'Only staff can claim tickets.', flags: MessageFlags.Ephemeral });
 
-        if (ticket.claimedBy) {
-            return interaction.reply({
+        await interaction.deferReply();
+
+        // ── Currently unclaimed → claim ───────────────────────────────────────
+        if (!ticket.claimedBy) {
+            await channel.permissionOverwrites.edit(user.id, {
+                ViewChannel: true, SendMessages: true, ReadMessageHistory: true,
+                AttachFiles: true, EmbedLinks: true, ManageMessages: true,
+            });
+
+            ticket.claimedBy    = user.id;
+            ticket.claimedByTag = user.username;
+            saveTicket(channel.id, ticket);
+
+            await _refreshPinnedEmbed(channel, ticket);
+
+            await interaction.editReply({
                 embeds: [new EmbedBuilder()
-                    .setColor(cfg.colors.warning)
-                    .setDescription(`This ticket is already claimed by <@${ticket.claimedBy}>.`)
+                    .setColor(cfg.colors.success)
+                    .setDescription(`<@${user.id}> has claimed this ticket.`)
+                    .setFooter({ text: 'Florida State Roleplay' })
                 ],
-                flags: MessageFlags.Ephemeral,
+            });
+
+        // ── Currently claimed → unclaim ───────────────────────────────────────
+        } else {
+            const isHR = member.roles.cache.has(cfg.roles.highRank) || member.roles.cache.has(cfg.roles.foundership);
+            if (ticket.claimedBy !== user.id && !isHR) {
+                return interaction.editReply({
+                    content: 'Only the claimer or High Rank+ can unclaim this ticket.',
+                });
+            }
+
+            const previousClaimer = ticket.claimedBy;
+            await channel.permissionOverwrites.delete(previousClaimer).catch(() => {});
+
+            ticket.claimedBy    = null;
+            ticket.claimedByTag = null;
+            saveTicket(channel.id, ticket);
+
+            await _refreshPinnedEmbed(channel, ticket);
+
+            await interaction.editReply({
+                embeds: [new EmbedBuilder()
+                    .setColor(cfg.colors.neutral)
+                    .setDescription(`<@${previousClaimer}> has been unclaimed from this ticket.`)
+                    .setFooter({ text: 'Florida State Roleplay' })
+                ],
             });
         }
-
-        await channel.permissionOverwrites.edit(user.id, {
-            ViewChannel: true, SendMessages: true, ReadMessageHistory: true,
-            AttachFiles: true, EmbedLinks: true, ManageMessages: true,
-        });
-
-        ticket.claimedBy    = user.id;
-        ticket.claimedByTag = user.username;
-        saveTicket(channel.id, ticket);
-
-        // Update the pinned embed to show claimer
-        if (ticket.openingMessageId) {
-            const pinned = await channel.messages.fetch(ticket.openingMessageId).catch(() => null);
-            if (pinned) {
-                const updated = buildEmbed({
-                    opener:       { id: ticket.openerId, username: ticket.openerTag },
-                    roblox:       ticket.roblox,
-                    reason:       ticket.reason,
-                    type:         ticket.type,
-                    padNum:       String(ticket.ticketNumber).padStart(4, '0'),
-                    reportedInfo: ticket.reportedUserId ? { userId: ticket.reportedUserId, tag: ticket.reportedUserTag } : null,
-                    claimed:      user.id,
-                });
-                await pinned.edit({ embeds: [updated] }).catch(() => {});
-            }
-        }
-
-        await interaction.reply({
-            embeds: [new EmbedBuilder()
-                .setColor(cfg.colors.success)
-                .setDescription(`<@${user.id}> has claimed this ticket.`)
-                .setFooter({ text: 'Florida State Roleplay' })
-            ],
-        });
     }
 
-    // ── Unclaim ───────────────────────────────────────────────────────────────
-    else if (customId === 'unclaim_ticket') {
-        const ticket = getTicket(channel.id);
-        if (!ticket) return interaction.reply({ content: 'Not a ticket channel.', flags: MessageFlags.Ephemeral });
-        if (!ticket.claimedBy) return interaction.reply({ content: 'This ticket is not claimed.', flags: MessageFlags.Ephemeral });
-
-        const isHR = member.roles.cache.has(cfg.roles.highRank) || member.roles.cache.has(cfg.roles.foundership);
-        if (ticket.claimedBy !== user.id && !isHR) {
-            return interaction.reply({ content: 'Only the claimer or High Rank+ can unclaim this ticket.', flags: MessageFlags.Ephemeral });
-        }
-
-        await channel.permissionOverwrites.delete(ticket.claimedBy).catch(() => {});
-
-        const previousClaimer = ticket.claimedBy;
-        ticket.claimedBy    = null;
-        ticket.claimedByTag = null;
-        saveTicket(channel.id, ticket);
-
-        // Update pinned embed
-        if (ticket.openingMessageId) {
-            const pinned = await channel.messages.fetch(ticket.openingMessageId).catch(() => null);
-            if (pinned) {
-                const updated = buildEmbed({
-                    opener:       { id: ticket.openerId, username: ticket.openerTag },
-                    roblox:       ticket.roblox,
-                    reason:       ticket.reason,
-                    type:         ticket.type,
-                    padNum:       String(ticket.ticketNumber).padStart(4, '0'),
-                    reportedInfo: ticket.reportedUserId ? { userId: ticket.reportedUserId, tag: ticket.reportedUserTag } : null,
-                    claimed:      null,
-                });
-                await pinned.edit({ embeds: [updated] }).catch(() => {});
-            }
-        }
-
-        await interaction.reply({
-            embeds: [new EmbedBuilder()
-                .setColor(cfg.colors.neutral)
-                .setDescription(`<@${previousClaimer}> has been unclaimed from this ticket.`)
-                .setFooter({ text: 'Florida State Roleplay' })
-            ],
-        });
-    }
-
-    // ── Close button (shows confirm) ──────────────────────────────────────────
+    // ── Close — show reason modal ─────────────────────────────────────────────
     else if (customId === 'close_ticket') {
         const ticket = getTicket(channel.id);
         if (!ticket) return interaction.reply({ content: 'Not a ticket channel.', flags: MessageFlags.Ephemeral });
@@ -124,39 +121,24 @@ async function handleButton(interaction) {
             return interaction.reply({ content: 'You do not have permission to close this ticket.', flags: MessageFlags.Ephemeral });
         }
 
-        const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('confirm_close_ticket').setLabel('Confirm Close').setStyle(ButtonStyle.Danger),
-            new ButtonBuilder().setCustomId('cancel_close_ticket').setLabel('Cancel').setStyle(ButtonStyle.Secondary),
+        const modal = new ModalBuilder()
+            .setCustomId('modal_close_ticket')
+            .setTitle('Close Ticket');
+
+        modal.addComponents(
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                    .setCustomId('close_reason')
+                    .setLabel('Reason for closing')
+                    .setStyle(TextInputStyle.Paragraph)
+                    .setPlaceholder('e.g. Resolved, User did not respond, Duplicate ticket, Invalid/spam…')
+                    .setRequired(true)
+                    .setMinLength(3)
+                    .setMaxLength(500)
+            ),
         );
 
-        await interaction.reply({
-            embeds: [new EmbedBuilder()
-                .setColor(cfg.colors.warning)
-                .setTitle('Close Ticket?')
-                .setDescription('This will generate a transcript and permanently delete the channel.\n\nAre you sure?')
-                .setFooter({ text: `Requested by ${user.username}` })
-            ],
-            components: [row],
-            flags: MessageFlags.Ephemeral,
-        });
-    }
-
-    // ── Confirm close ─────────────────────────────────────────────────────────
-    else if (customId === 'confirm_close_ticket') {
-        await interaction.deferUpdate();
-        await _closeTicket(channel, guild, user);
-    }
-
-    // ── Cancel close ──────────────────────────────────────────────────────────
-    else if (customId === 'cancel_close_ticket') {
-        await interaction.update({
-            embeds: [new EmbedBuilder()
-                .setColor(cfg.colors.success)
-                .setDescription('Ticket closure cancelled.')
-            ],
-            components: [],
-        });
+        return interaction.showModal(modal);
     }
 
     // ── Close request — Accept ────────────────────────────────────────────────
@@ -176,7 +158,7 @@ async function handleButton(interaction) {
             components: [],
         });
 
-        await _closeTicket(channel, guild, user);
+        await _closeTicket(channel, interaction.guild, user, 'Accepted close request');
     }
 
     // ── Close request — Deny ──────────────────────────────────────────────────
@@ -199,48 +181,91 @@ async function handleButton(interaction) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Modal submit — close reason  (routed from interactionCreate)
+// ─────────────────────────────────────────────────────────────────────────────
+async function handleCloseModal(interaction) {
+    const ticket = getTicket(interaction.channelId);
+    if (!ticket) return interaction.reply({ content: 'Not a ticket channel.', flags: MessageFlags.Ephemeral });
+
+    const member  = interaction.member;
+    const isStaff = member.roles.cache.has(cfg.roles.staff) ||
+                    member.roles.cache.has(cfg.roles.highRank) ||
+                    member.roles.cache.has(cfg.roles.foundership);
+    if (!isStaff && interaction.user.id !== ticket.openerId) {
+        return interaction.reply({ content: 'You do not have permission to close this ticket.', flags: MessageFlags.Ephemeral });
+    }
+
+    const closeReason = interaction.fields.getTextInputValue('close_reason').trim();
+    await interaction.deferUpdate().catch(() => interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(() => {}));
+    await _closeTicket(interaction.channel, interaction.guild, interaction.user, closeReason);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Shared close logic
 // ─────────────────────────────────────────────────────────────────────────────
-async function _closeTicket(channel, guild, closedBy) {
+async function _closeTicket(channel, guild, closedBy, closeReason = 'No reason provided') {
     const ticket = getTicket(channel.id);
     if (!ticket) return;
 
     await channel.send({
         embeds: [new EmbedBuilder()
             .setColor(cfg.colors.neutral)
-            .setDescription(`Ticket closed by <@${closedBy.id}>. Saving transcript…`)
+            .setTitle('Ticket Closing')
+            .addFields(
+                { name: 'Closed By',    value: `<@${closedBy.id}>`,  inline: true },
+                { name: 'Close Reason', value: closeReason,           inline: true },
+            )
+            .setDescription('Saving transcript…')
             .setFooter({ text: 'Florida State Roleplay' })
         ],
     });
 
-    // Generate transcript
-    let transcriptPath = null;
-    try { transcriptPath = await generateTranscript(channel, ticket); } catch (e) { console.error('[transcript]', e); }
+    // Generate transcript (returns { filepath, url, filename })
+    let transcriptResult = null;
+    try { transcriptResult = await generateTranscript(channel, ticket, closeReason); } catch (e) { console.error('[transcript]', e); }
 
     // Post to transcripts channel
     const transcriptCh = await guild.channels.fetch(cfg.channels.transcripts).catch(() => null);
     if (transcriptCh) {
-        const levelLabel = ['Staff', 'High Rank', 'Foundership'][ticket.escalationLevel];
-        const infoEmbed  = new EmbedBuilder()
+        const levelLabel = ['Staff', 'High Rank', 'Foundership'][ticket.escalationLevel] ?? 'Staff';
+
+        const infoEmbed = new EmbedBuilder()
             .setColor(cfg.colors.neutral)
             .setTitle(`Ticket Closed — #${String(ticket.ticketNumber).padStart(4, '0')}`)
             .addFields(
-                { name: 'Type',       value: ticket.type === 'staffreport' ? 'Staff Report' : 'General Support', inline: true },
-                { name: 'Opened By',  value: `<@${ticket.openerId}>`,                                            inline: true },
-                { name: 'Claimed By', value: ticket.claimedBy ? `<@${ticket.claimedBy}>` : 'Unclaimed',          inline: true },
-                { name: 'Closed By',  value: `<@${closedBy.id}>`,                                                inline: true },
-                { name: 'Escalation', value: levelLabel,                                                          inline: true },
-                { name: 'Channel',    value: `\`#${channel.name}\``,                                             inline: true },
+                { name: 'Type',         value: ticket.type === 'staffreport' ? 'Staff Report' : 'General Support', inline: true },
+                { name: 'Opened By',    value: `<@${ticket.openerId}>`,                                            inline: true },
+                { name: 'Claimed By',   value: ticket.claimedBy ? `<@${ticket.claimedBy}>` : 'Unclaimed',          inline: true },
+                { name: 'Closed By',    value: `<@${closedBy.id}>`,                                                inline: true },
+                { name: 'Close Reason', value: closeReason,                                                         inline: true },
+                { name: 'Escalation',   value: levelLabel,                                                          inline: true },
+                { name: 'Channel',      value: `\`#${channel.name}\``,                                             inline: true },
             )
             .setFooter({ text: 'Florida State Roleplay' })
             .setTimestamp();
 
-        const files = transcriptPath ? [new AttachmentBuilder(transcriptPath, { name: `transcript-${channel.name}.html` })] : [];
-        await transcriptCh.send({ embeds: [infoEmbed], files });
+        // Add hosted transcript URL as a button if the server URL is configured
+        const components = [];
+        if (transcriptResult?.url && !cfg.transcriptServer?.publicUrl?.includes('localhost')) {
+            components.push(
+                new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setLabel('View Transcript')
+                        .setStyle(ButtonStyle.Link)
+                        .setURL(transcriptResult.url),
+                ),
+            );
+        }
+
+        const files = transcriptResult?.filepath
+            ? [new AttachmentBuilder(transcriptResult.filepath, { name: `transcript-${channel.name}.html` })]
+            : [];
+
+        await transcriptCh.send({ embeds: [infoEmbed], files, components });
     }
 
     deleteTicket(channel.id);
     setTimeout(() => channel.delete('Ticket closed').catch(() => {}), 3000);
 }
 
-module.exports = { handleButton };
+module.exports = { handleButton, handleCloseModal };

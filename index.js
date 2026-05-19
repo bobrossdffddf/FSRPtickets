@@ -3,6 +3,9 @@ const { Client, GatewayIntentBits, Collection, Partials } = require('discord.js'
 const fs   = require('fs');
 const path = require('path');
 
+// Start the transcript HTTP server before the bot connects
+require('./utils/transcriptServer').start();
+
 // ─── Client ───────────────────────────────────────────────────────────────────
 const client = new Client({
     intents: [

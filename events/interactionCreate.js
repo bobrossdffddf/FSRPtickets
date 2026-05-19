@@ -1,6 +1,6 @@
-const { handlePanelSelect, handleUserSelect, handleGeneralModal, handleStaffReportModal } =
+const { handlePanelSelect, handleGeneralModal, handleStaffReportModal } =
     require('../handlers/panelHandler');
-const { handleButton } = require('../handlers/buttonHandler');
+const { handleButton, handleCloseModal } = require('../handlers/buttonHandler');
 
 module.exports = {
     name: 'interactionCreate',
@@ -20,19 +20,14 @@ module.exports = {
                 }
             }
 
-            // ── User Select Menus (Components V2 — staff report target picker) ─
-            else if (interaction.isUserSelectMenu()) {
-                if (interaction.customId === 'report_user_select') {
-                    await handleUserSelect(interaction, client);
-                }
-            }
-
             // ── Modal Submissions ──────────────────────────────────────────────
             else if (interaction.isModalSubmit()) {
                 if (interaction.customId === 'modal_general_support') {
                     await handleGeneralModal(interaction, client);
-                } else if (interaction.customId.startsWith('modal_staff_report_')) {
+                } else if (interaction.customId === 'modal_staff_report') {
                     await handleStaffReportModal(interaction, client);
+                } else if (interaction.customId === 'modal_close_ticket') {
+                    await handleCloseModal(interaction, client);
                 }
             }
 
