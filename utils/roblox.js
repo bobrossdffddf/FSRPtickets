@@ -1,9 +1,9 @@
 /**
  * Roblox / Melonly helpers.
  *
- * Automatic flow (no username typing required):
+ * Flow:
  *   1. Melonly API  →  GET /api/v1/server/members/discord/{discordId}
- *                      Returns the member's linked Roblox user ID in `id`.
+ *                      Finds the linked Roblox account for a verified Discord user.
  *   2. Roblox Users API      →  username / displayName / account created date
  *   3. Roblox Thumbnails API →  headshot avatar URL
  *
@@ -17,18 +17,22 @@ const ROBLOX_USERS = 'https://users.roblox.com/v1/users';
 const ROBLOX_THUMB = 'https://thumbnails.roblox.com/v1/users/avatar-headshot';
 
 /**
+ * Returns true if the value looks like a valid numeric Roblox ID.
+ * Roblox IDs are always positive integers.
+ * Rejects MongoDB ObjectIds (24-char hex strings) and other garbage.
+ */
+function isNumericRobloxId(val) {
+    if (val === null || val === undefined) return false;
+    const str = String(val).trim();
+    return /^\d+$/.test(str) && Number(str) > 0;
+}
+
+/**
  * Resolve a Discord user ID → full Roblox account info via the Melonly API.
  * Returns null (never throws) so callers can still create the ticket without it.
  *
  * @param {string} discordUserId
- * @returns {Promise<{
- *   id: string,
- *   username: string,
- *   displayName: string,
- *   created: string,
- *   avatarUrl: string|null,
- *   profileUrl: string,
- * }|null>}
+ * @returns {Promise<{id,username,displayName,created,avatarUrl,profileUrl}|null>}
  */
 async function getRobloxInfo(discordUserId) {
     try {
@@ -38,7 +42,7 @@ async function getRobloxInfo(discordUserId) {
             return null;
         }
 
-        // ── Step 1: Melonly → Roblox ID ──────────────────────────────────────
+        // ── Step 1: Melonly → member record ──────────────────────────────────
         const melRes = await fetch(
             `${MELONLY_BASE}/server/members/discord/${discordUserId}`,
             {
@@ -54,10 +58,27 @@ async function getRobloxInfo(discordUserId) {
             return null;
         }
 
-        const melData  = await melRes.json();
-        const robloxId = melData.id;
+        const melData = await melRes.json();
+
+        // Log the full response once so we can see the exact field names
+        console.log(`[Melonly] Raw response for ${discordUserId}:`, JSON.stringify(melData));
+
+        // The Melonly API returns their internal MongoDB ObjectId in `id`.
+        // The actual Roblox user ID (a positive integer) may be in a different field.
+        // We try all known field names and take the first one that looks like a real Roblox ID.
+        const candidateFields = ['robloxId', 'roblox_id', 'userId', 'user_id', 'robloxUserId', 'id'];
+        let robloxId = null;
+        for (const field of candidateFields) {
+            if (isNumericRobloxId(melData[field])) {
+                robloxId = String(melData[field]);
+                console.log(`[Melonly] Found Roblox ID in field '${field}': ${robloxId}`);
+                break;
+            }
+        }
+
         if (!robloxId) {
-            console.warn(`[Melonly] No Roblox ID in response for Discord ID ${discordUserId}`);
+            console.warn(`[Melonly] Could not find a numeric Roblox ID in the response. ` +
+                `Available fields: ${Object.keys(melData).join(', ')}`);
             return null;
         }
 
@@ -76,7 +97,7 @@ async function getRobloxInfo(discordUserId) {
         let avatarUrl = null;
         if (thumbRes.ok) {
             const thumb = await thumbRes.json();
-            avatarUrl   = thumb?.data?.[0]?.imageUrl ?? null;
+            avatarUrl = thumb?.data?.[0]?.imageUrl ?? null;
         } else {
             console.warn(`[Roblox] Thumbnail HTTP ${thumbRes.status} for ID ${robloxId} — continuing without avatar`);
         }
@@ -86,7 +107,7 @@ async function getRobloxInfo(discordUserId) {
         const yearsAgo   = Math.floor((Date.now() - created.getTime()) / (1000 * 60 * 60 * 24 * 365));
 
         return {
-            id:          String(robloxId),
+            id:          robloxId,
             username:    user.name,
             displayName: user.displayName,
             created:     `${createdStr} (${yearsAgo} year${yearsAgo !== 1 ? 's' : ''} ago)`,
