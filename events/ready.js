@@ -1,5 +1,5 @@
 module.exports = {
-    name: 'ready',
+    name: 'clientReady',   // renamed from 'ready' (discord.js v14 deprecation fix)
     once: true,
     execute(client) {
         console.log(`\n✅  Logged in as ${client.user.tag}`);

@@ -1,61 +1,75 @@
 /**
- * Roblox lookup — uses the public Roblox API directly (no API key needed).
+ * Roblox / Melonly helpers.
  *
- * getRobloxInfoByUsername(username)
- *   POST https://users.roblox.com/v1/usernames/users  → resolve username → user ID
- *   GET  https://users.roblox.com/v1/users/{id}       → full user info
- *   GET  https://thumbnails.roblox.com/...             → headshot avatar URL
+ * Automatic flow (no username typing required):
+ *   1. Melonly API  →  GET /api/v1/server/members/discord/{discordId}
+ *                      Returns the member's linked Roblox user ID in `id`.
+ *   2. Roblox Users API      →  username / displayName / account created date
+ *   3. Roblox Thumbnails API →  headshot avatar URL
+ *
+ * Requires:  MELONLY_API_KEY  in .env
+ * Get your key at:  Melonly Dashboard → Panel Settings → API Token
  */
 const fetch = require('node-fetch');
 
-const ROBLOX_USERS     = 'https://users.roblox.com/v1/users';
-const ROBLOX_USERNAMES = 'https://users.roblox.com/v1/usernames/users';
-const ROBLOX_THUMB     = 'https://thumbnails.roblox.com/v1/users/avatar-headshot';
+const MELONLY_BASE = 'https://api.melonly.xyz/api/v1';
+const ROBLOX_USERS = 'https://users.roblox.com/v1/users';
+const ROBLOX_THUMB = 'https://thumbnails.roblox.com/v1/users/avatar-headshot';
 
 /**
- * Look up a Roblox user by username.
- * Returns null on any failure so callers can handle gracefully.
+ * Resolve a Discord user ID → full Roblox account info via the Melonly API.
+ * Returns null (never throws) so callers can still create the ticket without it.
  *
- * @param {string} username  — exact Roblox username (case-insensitive)
- * @returns {Promise<{id, username, displayName, created, avatarUrl, profileUrl}|null>}
+ * @param {string} discordUserId
+ * @returns {Promise<{
+ *   id: string,
+ *   username: string,
+ *   displayName: string,
+ *   created: string,
+ *   avatarUrl: string|null,
+ *   profileUrl: string,
+ * }|null>}
  */
-async function getRobloxInfoByUsername(username) {
+async function getRobloxInfo(discordUserId) {
     try {
-        const trimmed = username.trim();
-        console.log(`[Roblox] Looking up username: "${trimmed}"`);
-
-        // ── Step 1: username → user ID ────────────────────────────────────────
-        const searchRes = await fetch(ROBLOX_USERNAMES, {
-            method:  'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify({ usernames: [trimmed], excludeBannedUsers: false }),
-        });
-        if (!searchRes.ok) {
-            const body = await searchRes.text().catch(() => '');
-            console.warn(`[Roblox] Step 1 HTTP ${searchRes.status} for "${trimmed}": ${body}`);
+        const apiKey = process.env.MELONLY_API_KEY;
+        if (!apiKey) {
+            console.warn('[Melonly] MELONLY_API_KEY not set in .env — skipping Roblox auto-lookup.');
             return null;
         }
-        const searchData = await searchRes.json();
-        console.log(`[Roblox] Step 1 response:`, JSON.stringify(searchData));
 
-        const match = searchData?.data?.[0];
-        if (!match) {
-            console.warn(`[Roblox] No user found for username "${trimmed}"`);
+        // ── Step 1: Melonly → Roblox ID ──────────────────────────────────────
+        const melRes = await fetch(
+            `${MELONLY_BASE}/server/members/discord/${discordUserId}`,
+            {
+                headers: {
+                    Authorization: `Bearer ${apiKey}`,
+                    'Content-Type': 'application/json',
+                },
+            }
+        );
+
+        if (!melRes.ok) {
+            console.warn(`[Melonly] HTTP ${melRes.status} for Discord ID ${discordUserId} — user may not be verified.`);
             return null;
         }
-        const robloxId = match.id;
-        console.log(`[Roblox] Resolved "${trimmed}" → ID ${robloxId}`);
 
-        // ── Step 2: full user info ────────────────────────────────────────────
+        const melData  = await melRes.json();
+        const robloxId = melData.id;
+        if (!robloxId) {
+            console.warn(`[Melonly] No Roblox ID in response for Discord ID ${discordUserId}`);
+            return null;
+        }
+
+        // ── Step 2: Roblox user info ─────────────────────────────────────────
         const userRes = await fetch(`${ROBLOX_USERS}/${robloxId}`);
         if (!userRes.ok) {
-            console.warn(`[Roblox] Step 2 HTTP ${userRes.status} for ID ${robloxId}`);
+            console.warn(`[Roblox] HTTP ${userRes.status} for Roblox ID ${robloxId}`);
             return null;
         }
         const user = await userRes.json();
-        console.log(`[Roblox] Step 2 user: ${user.name} (${user.displayName})`);
 
-        // ── Step 3: headshot avatar ───────────────────────────────────────────
+        // ── Step 3: Avatar headshot ──────────────────────────────────────────
         const thumbRes = await fetch(
             `${ROBLOX_THUMB}?userIds=${robloxId}&size=420x420&format=Png&isCircular=false`
         );
@@ -63,16 +77,15 @@ async function getRobloxInfoByUsername(username) {
         if (thumbRes.ok) {
             const thumb = await thumbRes.json();
             avatarUrl   = thumb?.data?.[0]?.imageUrl ?? null;
-            console.log(`[Roblox] Step 3 avatar: ${avatarUrl}`);
         } else {
-            console.warn(`[Roblox] Step 3 HTTP ${thumbRes.status} — continuing without avatar`);
+            console.warn(`[Roblox] Thumbnail HTTP ${thumbRes.status} for ID ${robloxId} — continuing without avatar`);
         }
 
         const created    = new Date(user.created);
         const createdStr = created.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
         const yearsAgo   = Math.floor((Date.now() - created.getTime()) / (1000 * 60 * 60 * 24 * 365));
 
-        const result = {
+        return {
             id:          String(robloxId),
             username:    user.name,
             displayName: user.displayName,
@@ -80,12 +93,10 @@ async function getRobloxInfoByUsername(username) {
             avatarUrl,
             profileUrl:  `https://www.roblox.com/users/${robloxId}/profile`,
         };
-        console.log(`[Roblox] Success:`, JSON.stringify(result));
-        return result;
     } catch (err) {
-        console.error('[getRobloxInfoByUsername] Unexpected error:', err?.message ?? err);
+        console.error('[getRobloxInfo] Unexpected error:', err?.message ?? err);
         return null;
     }
 }
 
-module.exports = { getRobloxInfoByUsername };
+module.exports = { getRobloxInfo };
