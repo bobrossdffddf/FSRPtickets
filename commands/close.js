@@ -1,4 +1,11 @@
-const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
+const {
+    SlashCommandBuilder,
+    ModalBuilder,
+    TextInputBuilder,
+    TextInputStyle,
+    ActionRowBuilder,
+    MessageFlags,
+} = require('discord.js');
 const cfg           = require('../config.json');
 const { getTicket } = require('../utils/db');
 
@@ -11,30 +18,34 @@ module.exports = {
         const ticket = getTicket(interaction.channelId);
         if (!ticket) return interaction.reply({ content: 'This can only be used inside a ticket channel.', flags: MessageFlags.Ephemeral });
 
-        const member  = interaction.member;
-        const isStaff = member.roles.cache.has(cfg.roles.staff) ||
-                        member.roles.cache.has(cfg.roles.highRank) ||
-                        member.roles.cache.has(cfg.roles.foundership);
+        const member   = interaction.member;
+        const isStaff  = member.roles.cache.has(cfg.roles.staff) ||
+                         member.roles.cache.has(cfg.roles.highRank) ||
+                         member.roles.cache.has(cfg.roles.foundership);
         const isOpener = interaction.user.id === ticket.openerId;
 
         if (!isStaff && !isOpener) {
             return interaction.reply({ content: 'You do not have permission to close this ticket.', flags: MessageFlags.Ephemeral });
         }
 
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('confirm_close_ticket').setLabel('Confirm Close').setStyle(ButtonStyle.Danger),
-            new ButtonBuilder().setCustomId('cancel_close_ticket').setLabel('Cancel').setStyle(ButtonStyle.Secondary),
+        // Show the close-reason modal — same as the button flow
+        const modal = new ModalBuilder()
+            .setCustomId('modal_close_ticket')
+            .setTitle('Close Ticket');
+
+        modal.addComponents(
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                    .setCustomId('close_reason')
+                    .setLabel('Reason for closing')
+                    .setStyle(TextInputStyle.Paragraph)
+                    .setPlaceholder('e.g. Resolved, User did not respond, Duplicate ticket, Invalid/spam…')
+                    .setRequired(true)
+                    .setMinLength(3)
+                    .setMaxLength(500)
+            ),
         );
 
-        await interaction.reply({
-            embeds: [new EmbedBuilder()
-                .setColor(cfg.colors.warning)
-                .setTitle('Close Ticket?')
-                .setDescription('A transcript will be saved and the channel will be deleted.\n\nAre you sure?')
-                .setFooter({ text: `Requested by ${interaction.user.username}` })
-            ],
-            components: [row],
-            flags: MessageFlags.Ephemeral,
-        });
+        return interaction.showModal(modal);
     },
 };

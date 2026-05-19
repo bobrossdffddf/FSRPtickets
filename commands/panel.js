@@ -33,6 +33,9 @@ module.exports = {
     async execute(interaction) {
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
+        const thumbnailUrl  = cfg.images?.panelThumbnail;
+        const footerIconUrl = cfg.images?.panelFooterIcon;
+
         const embed = new EmbedBuilder()
             .setColor(cfg.colors.main)
             .setTitle(`${E.fsrp}  Florida State Roleplay — Support`)
@@ -47,9 +50,17 @@ module.exports = {
                 `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
                 `${E.bell} Select a category below to open a ticket. Please be detailed in your request.`
             )
-            .setThumbnail('https://i.imgur.com/placeholder.png')   // swap for FSRP logo URL
-            .setFooter({ text: 'Florida State Roleplay  •  Support System' })
+            .setFooter({
+                text: 'Florida State Roleplay  •  Support System',
+                // Only pass iconURL if it's a real URL (not the placeholder string)
+                ...(footerIconUrl && !footerIconUrl.startsWith('REPLACE') ? { iconURL: footerIconUrl } : {}),
+            })
             .setTimestamp();
+
+        // Only set thumbnail if it's been replaced with a real URL
+        if (thumbnailUrl && !thumbnailUrl.startsWith('REPLACE')) {
+            embed.setThumbnail(thumbnailUrl);
+        }
 
         const row = new ActionRowBuilder().addComponents(
             new StringSelectMenuBuilder()
