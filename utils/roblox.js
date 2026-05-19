@@ -2,10 +2,13 @@
  * Roblox / Melonly helpers.
  *
  * Flow:
- *   1. Melonly API  →  GET /api/v1/server/members/discord/{discordId}
- *                      Finds the linked Roblox account for a verified Discord user.
- *   2. Roblox Users API      →  username / displayName / account created date
- *   3. Roblox Thumbnails API →  headshot avatar URL
+ *   1a. Melonly  GET /api/v1/server/members/discord/{discordId}
+ *       → returns server member record; may include robloxId directly.
+ *   1b. If no Roblox ID found in step 1a, use the internal Melonly `id` to call
+ *       GET /api/v1/users/{internalId}  (user profile, which holds the Roblox link).
+ *   1c. Fallback: GET /api/v1/users/discord/{discordId}  (direct user lookup).
+ *   2.  Roblox Users API      →  username / displayName / account created date
+ *   3.  Roblox Thumbnails API →  headshot avatar URL
  *
  * Requires:  MELONLY_API_KEY  in .env
  * Get your key at:  Melonly Dashboard → Panel Settings → API Token
@@ -16,15 +19,66 @@ const MELONLY_BASE = 'https://api.melonly.xyz/api/v1';
 const ROBLOX_USERS = 'https://users.roblox.com/v1/users';
 const ROBLOX_THUMB = 'https://thumbnails.roblox.com/v1/users/avatar-headshot';
 
+// Roblox user IDs are positive integers well under 10 billion as of 2025.
+// Discord snowflakes (~7.6 × 10^18) and MongoDB ObjectIds (24-char hex)
+// must both be rejected.
+const MAX_ROBLOX_ID = 10_000_000_000; // 10 billion — generous upper bound
+
 /**
- * Returns true if the value looks like a valid numeric Roblox ID.
- * Roblox IDs are always positive integers.
- * Rejects MongoDB ObjectIds (24-char hex strings) and other garbage.
+ * Returns true if the value looks like a valid numeric Roblox user ID.
+ * Rejects hex strings (MongoDB ObjectIds) and snowflake-sized integers.
  */
 function isNumericRobloxId(val) {
     if (val === null || val === undefined) return false;
     const str = String(val).trim();
-    return /^\d+$/.test(str) && Number(str) > 0;
+    if (!/^\d+$/.test(str)) return false;         // must be all digits
+    const n = Number(str);
+    return n > 0 && n < MAX_ROBLOX_ID;
+}
+
+/**
+ * Try to extract a Roblox ID from a Melonly API response object.
+ * Logs which field was used (or what fields were available if none matched).
+ */
+function extractRobloxId(data, label) {
+    const candidateFields = ['robloxId', 'roblox_id', 'robloxUserId', 'userId', 'user_id', 'id'];
+    for (const field of candidateFields) {
+        if (isNumericRobloxId(data[field])) {
+            const id = String(data[field]);
+            console.log(`[Melonly] ${label}: found Roblox ID in field '${field}': ${id}`);
+            return id;
+        }
+    }
+    console.warn(`[Melonly] ${label}: no numeric Roblox ID found. Available fields: ${Object.keys(data).join(', ')}`);
+    return null;
+}
+
+/**
+ * Make one authenticated GET request to the Melonly API.
+ * Returns parsed JSON on 2xx, null on any non-2xx or error.
+ */
+async function melonlyGet(path, apiKey, label) {
+    let res;
+    try {
+        res = await fetch(`${MELONLY_BASE}${path}`, {
+            headers: {
+                Authorization: `Bearer ${apiKey}`,
+                'Content-Type': 'application/json',
+            },
+        });
+    } catch (err) {
+        console.warn(`[Melonly] ${label}: fetch error — ${err?.message}`);
+        return null;
+    }
+
+    if (!res.ok) {
+        console.warn(`[Melonly] ${label}: HTTP ${res.status}`);
+        return null;
+    }
+
+    const data = await res.json();
+    console.log(`[Melonly] ${label}: raw response:`, JSON.stringify(data));
+    return data;
 }
 
 /**
@@ -42,43 +96,37 @@ async function getRobloxInfo(discordUserId) {
             return null;
         }
 
-        // ── Step 1: Melonly → member record ──────────────────────────────────
-        const melRes = await fetch(
-            `${MELONLY_BASE}/server/members/discord/${discordUserId}`,
-            {
-                headers: {
-                    Authorization: `Bearer ${apiKey}`,
-                    'Content-Type': 'application/json',
-                },
-            }
+        // ── Step 1a: server member record ────────────────────────────────────
+        let robloxId = null;
+        const memberData = await melonlyGet(
+            `/server/members/discord/${discordUserId}`, apiKey,
+            `member lookup for Discord ${discordUserId}`
         );
 
-        if (!melRes.ok) {
-            console.warn(`[Melonly] HTTP ${melRes.status} for Discord ID ${discordUserId} — user may not be verified.`);
-            return null;
+        if (memberData) {
+            robloxId = extractRobloxId(memberData, 'member record');
+
+            // ── Step 1b: user profile via internal Melonly ID ─────────────────
+            if (!robloxId && memberData.id) {
+                const userData = await melonlyGet(
+                    `/users/${memberData.id}`, apiKey,
+                    `user profile for internal ID ${memberData.id}`
+                );
+                if (userData) robloxId = extractRobloxId(userData, 'user profile');
+            }
         }
 
-        const melData = await melRes.json();
-
-        // Log the full response once so we can see the exact field names
-        console.log(`[Melonly] Raw response for ${discordUserId}:`, JSON.stringify(melData));
-
-        // The Melonly API returns their internal MongoDB ObjectId in `id`.
-        // The actual Roblox user ID (a positive integer) may be in a different field.
-        // We try all known field names and take the first one that looks like a real Roblox ID.
-        const candidateFields = ['robloxId', 'roblox_id', 'userId', 'user_id', 'robloxUserId', 'id'];
-        let robloxId = null;
-        for (const field of candidateFields) {
-            if (isNumericRobloxId(melData[field])) {
-                robloxId = String(melData[field]);
-                console.log(`[Melonly] Found Roblox ID in field '${field}': ${robloxId}`);
-                break;
-            }
+        // ── Step 1c: direct user endpoint fallback ───────────────────────────
+        if (!robloxId) {
+            const directData = await melonlyGet(
+                `/users/discord/${discordUserId}`, apiKey,
+                `direct user lookup for Discord ${discordUserId}`
+            );
+            if (directData) robloxId = extractRobloxId(directData, 'direct user record');
         }
 
         if (!robloxId) {
-            console.warn(`[Melonly] Could not find a numeric Roblox ID in the response. ` +
-                `Available fields: ${Object.keys(melData).join(', ')}`);
+            console.warn(`[Melonly] All lookup attempts failed for Discord ID ${discordUserId} — user may not be verified.`);
             return null;
         }
 
