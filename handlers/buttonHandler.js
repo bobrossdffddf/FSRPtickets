@@ -24,16 +24,17 @@ async function _refreshPinnedEmbed(channel, ticket) {
     if (!pinned) return;
 
     const updated = buildEmbed({
-        opener:       { id: ticket.openerId, username: ticket.openerTag },
-        roblox:       ticket.roblox,
-        robloxUsername: ticket.robloxUsername,
-        reason:       ticket.reason,
-        type:         ticket.type,
-        padNum:       String(ticket.ticketNumber).padStart(4, '0'),
-        reportedInfo: ticket.reportedUserId
+        opener:        { id: ticket.openerId, username: ticket.openerTag },
+        roblox:        ticket.roblox,
+        robloxFetching: false,
+        robloxFailed:  !ticket.roblox,
+        reason:        ticket.reason,
+        type:          ticket.type,
+        padNum:        String(ticket.ticketNumber).padStart(4, '0'),
+        reportedInfo:  ticket.reportedUserId
             ? { userId: ticket.reportedUserId, tag: ticket.reportedUserTag }
             : (ticket.reportedUserTag ? { userId: null, tag: ticket.reportedUserTag } : null),
-        claimed:      ticket.claimedBy,
+        claimed:       ticket.claimedBy,
     });
 
     await pinned.edit({
@@ -244,9 +245,9 @@ async function _closeTicket(channel, guild, closedBy, closeReason = 'No reason p
             .setFooter({ text: 'Florida State Roleplay' })
             .setTimestamp();
 
-        // Add hosted transcript URL as a button if the server URL is configured
+        // Always add the View Transcript button if we have a URL
         const components = [];
-        if (transcriptResult?.url && !cfg.transcriptServer?.publicUrl?.includes('localhost')) {
+        if (transcriptResult?.url) {
             components.push(
                 new ActionRowBuilder().addComponents(
                     new ButtonBuilder()
