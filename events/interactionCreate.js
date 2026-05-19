@@ -1,4 +1,4 @@
-const { handlePanelSelect, handleGeneralModal, handleStaffReportModal } =
+const { handlePanelSelect, handleUserSelect, handleGeneralModal, handleStaffReportModal } =
     require('../handlers/panelHandler');
 const { handleButton, handleCloseModal } = require('../handlers/buttonHandler');
 
@@ -17,6 +17,13 @@ module.exports = {
             else if (interaction.isStringSelectMenu()) {
                 if (interaction.customId === 'ticket_panel_select') {
                     await handlePanelSelect(interaction, client);
+                }
+            }
+
+            // ── User Select Menus (staff report — step 1: pick who to report) ─
+            else if (interaction.isUserSelectMenu()) {
+                if (interaction.customId === 'report_user_select') {
+                    await handleUserSelect(interaction, client);
                 }
             }
 
