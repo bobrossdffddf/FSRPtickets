@@ -1,132 +1,175 @@
 /**
- * Roblox / Melonly helpers.
+ * Roblox lookup helpers — multi-provider with automatic fallback.
  *
- * Flow:
- *   1a. Melonly  GET /api/v1/server/members/discord/{discordId}
- *       → returns server member record; may include robloxId directly.
- *   1b. If no Roblox ID found in step 1a, use the internal Melonly `id` to call
- *       GET /api/v1/users/{internalId}  (user profile, which holds the Roblox link).
- *   1c. Fallback: GET /api/v1/users/discord/{discordId}  (direct user lookup).
- *   2.  Roblox Users API      →  username / displayName / account created date
- *   3.  Roblox Thumbnails API →  headshot avatar URL
+ * Provider chain (first success wins):
+ *   1. Melonly  — if MELONLY_API_KEY is set in .env
+ *      Tries several endpoint variants since their docs are not publicly accessible.
+ *   2. Blox.link — if BLOXLINK_API_KEY is set in .env
+ *      Popular Discord-Roblox verification service with a well-documented public API.
+ *   3. RoVer    — always attempted as a free, no-auth fallback.
+ *      Works if the user verified via the RoVer bot.
  *
- * Requires:  MELONLY_API_KEY  in .env
- * Get your key at:  Melonly Dashboard → Panel Settings → API Token
+ * After a Roblox user ID is found from any provider:
+ *   4. Roblox Users API      — username / displayName / account created date
+ *   5. Roblox Thumbnails API — headshot avatar URL
  */
 const fetch = require('node-fetch');
 
-const MELONLY_BASE = 'https://api.melonly.xyz/api/v1';
-const ROBLOX_USERS = 'https://users.roblox.com/v1/users';
-const ROBLOX_THUMB = 'https://thumbnails.roblox.com/v1/users/avatar-headshot';
+const MELONLY_BASE  = 'https://api.melonly.xyz/api/v1';
+const BLOXLINK_BASE = 'https://api.blox.link/v4/public';
+const ROVER_BASE    = 'https://verify.eryn.io/api';
+const ROBLOX_USERS  = 'https://users.roblox.com/v1/users';
+const ROBLOX_THUMB  = 'https://thumbnails.roblox.com/v1/users/avatar-headshot';
 
-// Roblox user IDs are positive integers well under 10 billion as of 2025.
-// Discord snowflakes (~7.6 × 10^18) and MongoDB ObjectIds (24-char hex)
-// must both be rejected.
-const MAX_ROBLOX_ID = 10_000_000_000; // 10 billion — generous upper bound
+// Roblox user IDs are positive integers well under 10 billion (as of 2025).
+// Discord snowflakes (~7.6 × 10^18) must be rejected even though they are numeric.
+const MAX_ROBLOX_ID = 10_000_000_000;
 
-/**
- * Returns true if the value looks like a valid numeric Roblox user ID.
- * Rejects hex strings (MongoDB ObjectIds) and snowflake-sized integers.
- */
-function isNumericRobloxId(val) {
+function isValidRobloxId(val) {
     if (val === null || val === undefined) return false;
     const str = String(val).trim();
-    if (!/^\d+$/.test(str)) return false;         // must be all digits
+    if (!/^\d+$/.test(str)) return false;
     const n = Number(str);
     return n > 0 && n < MAX_ROBLOX_ID;
 }
 
-/**
- * Try to extract a Roblox ID from a Melonly API response object.
- * Logs which field was used (or what fields were available if none matched).
- */
-function extractRobloxId(data, label) {
-    const candidateFields = ['robloxId', 'roblox_id', 'robloxUserId', 'userId', 'user_id', 'id'];
-    for (const field of candidateFields) {
-        if (isNumericRobloxId(data[field])) {
-            const id = String(data[field]);
-            console.log(`[Melonly] ${label}: found Roblox ID in field '${field}': ${id}`);
+/** Pull the first valid Roblox ID out of a plain object by checking known field names. */
+function extractRobloxId(obj, label) {
+    const candidates = ['robloxId', 'robloxID', 'roblox_id', 'robloxUserId', 'userId', 'user_id'];
+    for (const field of candidates) {
+        if (isValidRobloxId(obj[field])) {
+            const id = String(obj[field]);
+            console.log(`[Roblox lookup] ${label}: found ID in field '${field}' = ${id}`);
             return id;
         }
     }
-    console.warn(`[Melonly] ${label}: no numeric Roblox ID found. Available fields: ${Object.keys(data).join(', ')}`);
     return null;
 }
 
-/**
- * Make one authenticated GET request to the Melonly API.
- * Returns parsed JSON on 2xx, null on any non-2xx or error.
- */
-async function melonlyGet(path, apiKey, label) {
-    let res;
-    try {
-        res = await fetch(`${MELONLY_BASE}${path}`, {
-            headers: {
-                Authorization: `Bearer ${apiKey}`,
-                'Content-Type': 'application/json',
-            },
-        });
-    } catch (err) {
-        console.warn(`[Melonly] ${label}: fetch error — ${err?.message}`);
-        return null;
+// ─────────────────────────────────────────────────────────────────────────────
+// Provider 1 — Melonly
+// ─────────────────────────────────────────────────────────────────────────────
+async function lookupViaMelonly(discordUserId) {
+    const apiKey = process.env.MELONLY_API_KEY;
+    if (!apiKey) return null;
+
+    const headers = { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' };
+
+    // Endpoint variants to try in order
+    const variants = [
+        `/server/members/discord/${discordUserId}`,
+        `/users/discord/${discordUserId}`,
+        `/verification/discord/${discordUserId}`,
+        `/server/users/discord/${discordUserId}`,
+    ];
+
+    for (const path of variants) {
+        let res;
+        try { res = await fetch(`${MELONLY_BASE}${path}`, { headers }); }
+        catch { continue; }
+
+        if (!res.ok) {
+            if (res.status !== 404) console.warn(`[Melonly] ${path} → HTTP ${res.status}`);
+            continue;
+        }
+
+        const data = await res.json();
+        console.log(`[Melonly] ${path} raw response:`, JSON.stringify(data));
+
+        const id = extractRobloxId(data, `Melonly ${path}`);
+        if (id) return id;
+
+        // If the member record has an internal ID, try the user profile endpoint
+        if (data.id && typeof data.id === 'string') {
+            try {
+                const userRes = await fetch(`${MELONLY_BASE}/users/${data.id}`, { headers });
+                if (userRes.ok) {
+                    const userData = await userRes.json();
+                    console.log(`[Melonly] /users/${data.id} raw response:`, JSON.stringify(userData));
+                    const uid = extractRobloxId(userData, `Melonly /users/${data.id}`);
+                    if (uid) return uid;
+                }
+            } catch { /* ignore */ }
+        }
     }
 
-    if (!res.ok) {
-        console.warn(`[Melonly] ${label}: HTTP ${res.status}`);
-        return null;
-    }
-
-    const data = await res.json();
-    console.log(`[Melonly] ${label}: raw response:`, JSON.stringify(data));
-    return data;
+    console.warn(`[Melonly] No Roblox ID found for Discord ${discordUserId} across all endpoint variants.`);
+    return null;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Provider 2 — Blox.link
+// ─────────────────────────────────────────────────────────────────────────────
+async function lookupViaBloxlink(discordUserId) {
+    const apiKey = process.env.BLOXLINK_API_KEY;
+    if (!apiKey) return null;
+
+    try {
+        const res = await fetch(
+            `${BLOXLINK_BASE}/discord-to-roblox/${discordUserId}`,
+            { headers: { 'api-key': apiKey } }
+        );
+        if (!res.ok) {
+            console.warn(`[Blox.link] HTTP ${res.status} for Discord ${discordUserId}`);
+            return null;
+        }
+        const data = await res.json();
+        console.log(`[Blox.link] raw response:`, JSON.stringify(data));
+
+        const id = extractRobloxId(data, 'Blox.link');
+        if (id) return id;
+
+        // Blox.link v4 also nests it under resolved.roblox.id
+        if (isValidRobloxId(data?.resolved?.roblox?.id)) {
+            return String(data.resolved.roblox.id);
+        }
+    } catch (err) {
+        console.warn(`[Blox.link] Error: ${err?.message}`);
+    }
+    return null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Provider 3 — RoVer (free, no API key)
+// ─────────────────────────────────────────────────────────────────────────────
+async function lookupViaRover(discordUserId) {
+    try {
+        const res = await fetch(`${ROVER_BASE}/user/${discordUserId}`);
+        if (!res.ok) {
+            if (res.status !== 404) console.warn(`[RoVer] HTTP ${res.status} for Discord ${discordUserId}`);
+            return null;
+        }
+        const data = await res.json();
+        // RoVer returns { status: 'ok', robloxId: 12345678, robloxUsername: '...' }
+        if (data.status === 'ok' && isValidRobloxId(data.robloxId)) {
+            console.log(`[RoVer] Found Roblox ID ${data.robloxId} for Discord ${discordUserId}`);
+            return String(data.robloxId);
+        }
+    } catch (err) {
+        console.warn(`[RoVer] Error: ${err?.message}`);
+    }
+    return null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Main export
+// ─────────────────────────────────────────────────────────────────────────────
 /**
- * Resolve a Discord user ID → full Roblox account info via the Melonly API.
- * Returns null (never throws) so callers can still create the ticket without it.
+ * Resolve a Discord user ID → full Roblox account info.
+ * Returns null (never throws) so ticket creation always succeeds even without it.
  *
  * @param {string} discordUserId
  * @returns {Promise<{id,username,displayName,created,avatarUrl,profileUrl}|null>}
  */
 async function getRobloxInfo(discordUserId) {
     try {
-        const apiKey = process.env.MELONLY_API_KEY;
-        if (!apiKey) {
-            console.warn('[Melonly] MELONLY_API_KEY not set in .env — skipping Roblox auto-lookup.');
-            return null;
-        }
-
-        // ── Step 1a: server member record ────────────────────────────────────
-        let robloxId = null;
-        const memberData = await melonlyGet(
-            `/server/members/discord/${discordUserId}`, apiKey,
-            `member lookup for Discord ${discordUserId}`
-        );
-
-        if (memberData) {
-            robloxId = extractRobloxId(memberData, 'member record');
-
-            // ── Step 1b: user profile via internal Melonly ID ─────────────────
-            if (!robloxId && memberData.id) {
-                const userData = await melonlyGet(
-                    `/users/${memberData.id}`, apiKey,
-                    `user profile for internal ID ${memberData.id}`
-                );
-                if (userData) robloxId = extractRobloxId(userData, 'user profile');
-            }
-        }
-
-        // ── Step 1c: direct user endpoint fallback ───────────────────────────
-        if (!robloxId) {
-            const directData = await melonlyGet(
-                `/users/discord/${discordUserId}`, apiKey,
-                `direct user lookup for Discord ${discordUserId}`
-            );
-            if (directData) robloxId = extractRobloxId(directData, 'direct user record');
-        }
+        // ── Step 1: find a Roblox user ID via any available provider ─────────
+        let robloxId = await lookupViaMelonly(discordUserId)
+                    ?? await lookupViaBloxlink(discordUserId)
+                    ?? await lookupViaRover(discordUserId);
 
         if (!robloxId) {
-            console.warn(`[Melonly] All lookup attempts failed for Discord ID ${discordUserId} — user may not be verified.`);
+            console.warn(`[Roblox lookup] All providers failed for Discord ${discordUserId} — user may not be verified.`);
             return null;
         }
 
