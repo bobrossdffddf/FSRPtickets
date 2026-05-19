@@ -1,5 +1,11 @@
-const { handlePanelSelect, handleGeneralModal, handleStaffReportModal } =
-    require('../handlers/panelHandler');
+const {
+    handlePanelSelect,
+    handleTestPanelSelect,
+    handleGeneralModal,
+    handleGeneralTestModal,
+    handleStaffReportModal,
+    handleStaffReportTestModal,
+} = require('../handlers/panelHandler');
 const { handleButton, handleCloseModal } = require('../handlers/buttonHandler');
 
 module.exports = {
@@ -17,6 +23,8 @@ module.exports = {
             else if (interaction.isStringSelectMenu()) {
                 if (interaction.customId === 'ticket_panel_select') {
                     await handlePanelSelect(interaction, client);
+                } else if (interaction.customId === 'ticket_test_select') {
+                    await handleTestPanelSelect(interaction, client);
                 }
             }
 
@@ -24,8 +32,12 @@ module.exports = {
             else if (interaction.isModalSubmit()) {
                 if (interaction.customId === 'modal_general_support') {
                     await handleGeneralModal(interaction, client);
+                } else if (interaction.customId === 'modal_general_support_test') {
+                    await handleGeneralTestModal(interaction, client);
                 } else if (interaction.customId === 'modal_staff_report') {
                     await handleStaffReportModal(interaction, client);
+                } else if (interaction.customId === 'modal_staff_report_test') {
+                    await handleStaffReportTestModal(interaction, client);
                 } else if (interaction.customId === 'modal_close_ticket') {
                     await handleCloseModal(interaction, client);
                 }

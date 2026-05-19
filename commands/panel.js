@@ -1,65 +1,92 @@
 /**
- * /panel  — sends the support panel embed to the current channel.
- * Only usable by staff+.
+ * /panel — sends the support panel to the current channel using Discord Components V2.
+ * Restricted to HR (highRank) and above.
  */
 const {
     SlashCommandBuilder,
-    EmbedBuilder,
+    ContainerBuilder,
+    SeparatorBuilder,
+    TextDisplayBuilder,
+    MediaGalleryBuilder,
     ActionRowBuilder,
     StringSelectMenuBuilder,
     StringSelectMenuOptionBuilder,
     PermissionFlagsBits,
     MessageFlags,
+    SeparatorSpacingSize,
 } = require('discord.js');
-const cfg = require('../config.json');
+const cfg            = require('../config.json');
+const { loadImages } = require('../utils/images');
 
 const E = {
     fsrp:   '<:FSRP:1500172509826383922>',
     ticket: '<:ticket:1491123553985232946>',
     shield: '<:shield:1491123625762492558>',
     info:   '<:information:1492185664211386561>',
-    bell:   '<:bell:1492185923964637364>',
-    FHP:    '<:FHP:1502769420605587527>',
-    PD:     '<:PD:1502770159633436832>',
-    FD:     '<:FD:1502770440324776077>',
 };
+
+function hexToInt(hex) {
+    return parseInt(hex.replace('#', ''), 16);
+}
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('panel')
         .setDescription('Send the FSRP support panel to this channel.')
-        .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
+        .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
 
     async execute(interaction) {
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-        const thumbnailUrl  = cfg.images?.panelThumbnail;
-        const footerIconUrl = cfg.images?.panelFooterIcon;
+        const member = interaction.member;
+        const isHR = member.roles.cache.has(cfg.roles.highRank) ||
+                     member.roles.cache.has(cfg.roles.foundership);
+        if (!isHR) {
+            return interaction.editReply({ content: 'This command requires the High Rank role or above.' });
+        }
 
-        const embed = new EmbedBuilder()
-            .setColor(cfg.colors.main)
-            .setTitle(`${E.fsrp}  Florida State Roleplay — Support`)
-            .setDescription(
-                `${E.info} **Welcome to FSRP Support.**\n` +
-                `Our staff team is here to assist you with any questions or concerns.\n\n` +
-                `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-                `${E.ticket}  **General Support**\n` +
-                `> Questions, concerns, partnership inquiries, verifications, and general help.\n\n` +
-                `${E.shield}  **Staff Report**\n` +
-                `> Report a staff member for misconduct, abuse of power, or rule violations.\n\n` +
-                `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                `${E.bell} Select a category below to open a ticket. Please be detailed in your request.`
+        const imgs = loadImages();
+        const topBannerUrl    = imgs.topBanner    ?? null;
+        const bottomBannerUrl = imgs.bottomBanner ?? imgs.banner ?? null;
+
+        const container = new ContainerBuilder().setAccentColor(hexToInt(cfg.colors.main));
+
+        if (topBannerUrl) {
+            container.addMediaGalleryComponents(
+                new MediaGalleryBuilder().addItems({ media: { url: topBannerUrl } })
+            );
+        }
+
+        container
+            .addTextDisplayComponents(
+                new TextDisplayBuilder().setContent(
+                    `## ${E.fsrp}  FSRP: Florida State Roleplay | Support Portal\n\n` +
+                    `${E.info} **Welcome to FSRP Support.**\n` +
+                    `We are here to help! Please create a ticket and a member of our staff team will assist you with any questions or concerns.`
+                )
             )
-            .setFooter({
-                text: 'Florida State Roleplay  •  Support System',
-                // Only pass iconURL if it's a real URL (not the placeholder string)
-                ...(footerIconUrl && !footerIconUrl.startsWith('REPLACE') ? { iconURL: footerIconUrl } : {}),
-            })
-            .setTimestamp();
+            .addSeparatorComponents(
+                new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Large)
+            )
+            .addTextDisplayComponents(
+                new TextDisplayBuilder().setContent(
+                    `${E.ticket}  **General Support**\n` +
+                    `> Questions, concerns, partnership inquiries, verifications, and general help.\n\n` +
+                    `${E.shield}  **Staff Report**\n` +
+                    `> Report a staff member for misconduct, abuse of power, or rule violations.`
+                )
+            )
+            .addSeparatorComponents(
+                new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Large)
+            )
+            .addTextDisplayComponents(
+                new TextDisplayBuilder().setContent('Select a category below to open a ticket.')
+            );
 
-        // Only set thumbnail if it's been replaced with a real URL
-        if (thumbnailUrl && !thumbnailUrl.startsWith('REPLACE')) {
-            embed.setThumbnail(thumbnailUrl);
+        if (bottomBannerUrl) {
+            container.addMediaGalleryComponents(
+                new MediaGalleryBuilder().addItems({ media: { url: bottomBannerUrl } })
+            );
         }
 
         const row = new ActionRowBuilder().addComponents(
@@ -80,7 +107,11 @@ module.exports = {
                 )
         );
 
-        await interaction.channel.send({ embeds: [embed], components: [row] });
+        await interaction.channel.send({
+            flags: MessageFlags.IsComponentsV2,
+            components: [container, row],
+        });
+
         await interaction.editReply({ content: `${E.fsrp} Panel sent successfully.` });
     },
 };

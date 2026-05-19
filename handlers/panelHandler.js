@@ -6,15 +6,25 @@ const {
     EmbedBuilder,
     ButtonBuilder,
     ButtonStyle,
+    ContainerBuilder,
+    SeparatorBuilder,
+    TextDisplayBuilder,
+    MediaGalleryBuilder,
+    SeparatorSpacingSize,
     ChannelType,
     PermissionFlagsBits,
     MessageFlags,
     Routes,
 } = require('discord.js');
 
-const cfg = require('../config.json');
+const cfg               = require('../config.json');
 const { getRobloxInfo } = require('../utils/roblox');
+const { loadImages }    = require('../utils/images');
 const { getAllTickets, getTicket, saveTicket, nextTicketNumber } = require('../utils/db');
+
+function hexToInt(hex) {
+    return parseInt(hex.replace('#', ''), 16);
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Button row builder  (single Claim/Unclaim toggle + Close)
@@ -34,9 +44,101 @@ function buildButtons(ticket) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Panel dropdown
+// Container builder for ticket messages (Components V2)
+// ─────────────────────────────────────────────────────────────────────────────
+function buildContainer({ opener, roblox, robloxFetching = false, robloxFailed = false, reason, type, padNum, reportedInfo, reportedRoblox = null, reportedRobloxFetching = false, claimed }) {
+    const isReport    = type === 'staffreport';
+    const imgs        = loadImages();
+    const topBannerUrl    = imgs.topBanner    ?? null;
+    const bottomBannerUrl = imgs.bottomBanner ?? imgs.banner ?? null;
+
+    const E_ticket = '<:ticket:1491123553985232946>';
+    const E_shield = '<:shield:1491123625762492558>';
+
+    let content = `## ${isReport ? E_shield : E_ticket}  ${isReport ? 'Staff Report' : 'General Support'} — Ticket #${padNum}\n\n`;
+    content += `Hi, <@${opener.id}>! Thank you for contacting **Florida State Roleplay** Support.\n`;
+    content += `Our staff team will be with you shortly. Please provide any additional details if needed.\n\n`;
+
+    if (robloxFetching) {
+        content += `**Roblox Account:** *Fetching details…*\n\n`;
+    } else if (roblox) {
+        content += `**Roblox Account:** [${roblox.username}](${roblox.profileUrl}) (\`${roblox.id}\`) · ${roblox.displayName}\n`;
+        content += `**Account Created:** ${roblox.created}\n\n`;
+    } else {
+        content += `**Roblox Account:** *Not found — user may not be verified with Melonly.*\n\n`;
+    }
+
+    const safeReason = reason.length > 900 ? reason.substring(0, 900) + '…' : reason;
+    content += `**Ticket Reason:**\n> ${safeReason.replace(/\n/g, '\n> ')}\n\n`;
+
+    if (isReport && reportedInfo) {
+        const val = reportedInfo.userId
+            ? `<@${reportedInfo.userId}> (${reportedInfo.tag})`
+            : reportedInfo.tag;
+        content += `**Reported Staff Member:** ${val}\n`;
+        if (reportedRobloxFetching) {
+            content += `**Their Roblox Account:** *Fetching details…*\n\n`;
+        } else if (reportedRoblox) {
+            content += `**Their Roblox Account:** [${reportedRoblox.username}](${reportedRoblox.profileUrl}) (\`${reportedRoblox.id}\`) · ${reportedRoblox.displayName}\n`;
+            content += `**Account Created:** ${reportedRoblox.created}\n\n`;
+        } else {
+            content += `**Their Roblox Account:** *Not found — may not be verified.*\n\n`;
+        }
+    }
+
+    content += `**Claimed By:** ${claimed ? `<@${claimed}>` : '*Unclaimed*'}\n\n`;
+    content += `-# Florida State Roleplay  •  Ticket #${padNum}`;
+
+    const container = new ContainerBuilder()
+        .setAccentColor(hexToInt(isReport ? cfg.colors.foundership : cfg.colors.main));
+
+    if (topBannerUrl) {
+        container.addMediaGalleryComponents(
+            new MediaGalleryBuilder().addItems({ media: { url: topBannerUrl } })
+        );
+    }
+
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(content));
+
+    if (bottomBannerUrl) {
+        container.addMediaGalleryComponents(
+            new MediaGalleryBuilder().addItems({ media: { url: bottomBannerUrl } })
+        );
+    }
+
+    return container;
+}
+
+// Builds the full component list for a ticket message (ping display + container + buttons)
+function buildTicketComponents(ticketData, embedParams) {
+    const container  = buildContainer(embedParams);
+    const buttons    = buildButtons(ticketData);
+    const components = [];
+
+    if (!ticketData.noPing) {
+        const notifyRole = ticketData.type === 'staffreport' ? cfg.roles.highRank : cfg.roles.staff;
+        components.push(
+            new TextDisplayBuilder().setContent(`<@${ticketData.openerId}> — <@&${notifyRole}>`)
+        );
+    }
+
+    components.push(container, buttons);
+    return components;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Panel dropdown (regular — pings enabled)
 // ─────────────────────────────────────────────────────────────────────────────
 async function handlePanelSelect(interaction) {
+    await _handleSelect(interaction, false);
+}
+
+// Panel dropdown (test — no pings)
+async function handleTestPanelSelect(interaction) {
+    await _handleSelect(interaction, true);
+}
+
+async function _handleSelect(interaction, noPing) {
     const value = interaction.values[0];
 
     // Block duplicate tickets
@@ -56,7 +158,7 @@ async function handlePanelSelect(interaction) {
     // ── General Support ───────────────────────────────────────────────────────
     if (value === 'general') {
         const modal = new ModalBuilder()
-            .setCustomId('modal_general_support')
+            .setCustomId(noPing ? 'modal_general_support_test' : 'modal_general_support')
             .setTitle('General Support');
 
         modal.addComponents(
@@ -75,8 +177,6 @@ async function handlePanelSelect(interaction) {
     }
 
     // ── Staff Report — modal with User Select + reason ────────────────────────
-    // Discord now supports UserSelect (type 5) inside a Label (type 18) in modals.
-    // discord.js builders don't expose this yet so we send the raw REST payload.
     if (value === 'staffreport') {
         await interaction.client.rest.post(
             Routes.interactionCallback(interaction.id, interaction.token),
@@ -84,7 +184,7 @@ async function handlePanelSelect(interaction) {
                 body: {
                     type: 9,   // InteractionResponseType.Modal
                     data: {
-                        custom_id: 'modal_staff_report',
+                        custom_id: noPing ? 'modal_staff_report_test' : 'modal_staff_report',
                         title: 'Staff Report',
                         components: [
                             {
@@ -119,7 +219,6 @@ async function handlePanelSelect(interaction) {
                 },
             }
         );
-        // Tell discord.js this interaction has been replied to
         interaction._replied = true;
     }
 }
@@ -130,26 +229,39 @@ async function handlePanelSelect(interaction) {
 async function handleGeneralModal(interaction) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const reason = interaction.fields.getTextInputValue('reason');
-    await createTicket(interaction, 'general', reason, null);
+    await createTicket(interaction, 'general', reason, null, false);
+}
+
+async function handleGeneralTestModal(interaction) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const reason = interaction.fields.getTextInputValue('reason');
+    await createTicket(interaction, 'general', reason, null, true);
 }
 
 async function handleStaffReportModal(interaction) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
     const reason = interaction.fields.getTextInputValue('reason');
+    const reportedInfo = await _extractReportedUser(interaction);
+    if (!reportedInfo) return;
+    await createTicket(interaction, 'staffreport', reason, reportedInfo, false);
+}
 
-    // ── Extract the User Select value ────────────────────────────────────────
-    // Discord sends Label+UserSelect at the top-level components array.
-    // We try multiple approaches since discord.js may or may not parse type-18 Labels.
+async function handleStaffReportTestModal(interaction) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const reason = interaction.fields.getTextInputValue('reason');
+    const reportedInfo = await _extractReportedUser(interaction);
+    if (!reportedInfo) return;
+    await createTicket(interaction, 'staffreport', reason, reportedInfo, true);
+}
+
+async function _extractReportedUser(interaction) {
     let reportedUserId = null;
 
-    // Approach 1: standard getField (works if discord.js handles Label/type-18)
     try {
         const field = interaction.fields.getField('reported_user');
         if (field?.values?.[0]) reportedUserId = field.values[0];
     } catch { /* not found via this path */ }
 
-    // Approach 2: iterate raw fields Collection
     if (!reportedUserId) {
         for (const [, field] of (interaction.fields.fields ?? [])) {
             const cid = field.custom_id ?? field.customId;
@@ -160,19 +272,18 @@ async function handleStaffReportModal(interaction) {
         }
     }
 
-    // Approach 3: resolved users from the interaction (discord.js v14.16+)
     if (!reportedUserId && interaction.resolved?.users?.size) {
         reportedUserId = interaction.resolved.users.first()?.id;
     }
 
     if (!reportedUserId) {
         console.error('[StaffReport] Could not extract User Select value from modal submit.');
-        return interaction.editReply({
+        await interaction.editReply({
             content: '❌ Could not read the selected staff member. Please try again.',
         });
+        return null;
     }
 
-    // ── Resolve username ─────────────────────────────────────────────────────
     let reportedTag = `<@${reportedUserId}>`;
     try {
         const user = interaction.client.users.cache.get(reportedUserId)
@@ -180,13 +291,14 @@ async function handleStaffReportModal(interaction) {
         reportedTag = user.username;
     } catch { /* keep mention fallback */ }
 
-    await createTicket(interaction, 'staffreport', reason, { userId: reportedUserId, tag: reportedTag });
+    return { userId: reportedUserId, tag: reportedTag };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Core ticket creation
+// noPing = true → no @user or @role mentions in the opening message
 // ─────────────────────────────────────────────────────────────────────────────
-async function createTicket(interaction, type, reason, reportedInfo) {
+async function createTicket(interaction, type, reason, reportedInfo, noPing = false) {
     const guild     = interaction.guild;
     const opener    = interaction.user;
     const ticketNum = nextTicketNumber();
@@ -213,7 +325,7 @@ async function createTicket(interaction, type, reason, reportedInfo) {
         ],
     });
 
-    // ── 2. Send initial embed ─────────────────────────────────────────────────
+    // ── 2. Build ticket data ──────────────────────────────────────────────────
     const ticketData = {
         type,
         openerId:         opener.id,
@@ -227,21 +339,23 @@ async function createTicket(interaction, type, reason, reportedInfo) {
         reportedUserId:   reportedInfo?.userId ?? null,
         reportedUserTag:  reportedInfo?.tag    ?? null,
         roblox:           null,
+        reportedRoblox:   null,
         openedAt:         Date.now(),
         openingMessageId: null,
+        noPing,
     };
 
-    const initialEmbed = buildEmbed({
+    const initialParams = {
         opener, roblox: null, robloxFetching: true,
-        reason, type, padNum, reportedInfo, claimed: null,
-    });
-    const buttons = buildButtons(ticketData);
+        reason, type, padNum, reportedInfo,
+        reportedRoblox: null, reportedRobloxFetching: isReport && !!reportedInfo?.userId,
+        claimed: null,
+    };
 
-    const notifyRole = isReport ? cfg.roles.highRank : cfg.roles.staff;
     const msg = await channel.send({
-        content:    `<@${opener.id}> — <@&${notifyRole}>`,
-        embeds:     [initialEmbed],
-        components: [buttons],
+        flags: MessageFlags.IsComponentsV2,
+        components: buildTicketComponents(ticketData, initialParams),
+        allowedMentions: noPing ? { parse: [] } : { parse: ['users', 'roles'] },
     });
 
     await msg.pin().catch(() => {});
@@ -259,100 +373,53 @@ async function createTicket(interaction, type, reason, reportedInfo) {
         ],
     });
 
-    // ── 5. Melonly Roblox lookup in background → update embed ─────────────────
-    getRobloxInfo(opener.id).then(roblox => {
+    // ── 5. Roblox lookups in background → update container ────────────────────
+    const lookups = [
+        getRobloxInfo(opener.id),
+        isReport && reportedInfo?.userId ? getRobloxInfo(reportedInfo.userId) : Promise.resolve(null),
+    ];
+
+    Promise.all(lookups).then(([roblox, reportedRoblox]) => {
         const ticket = getTicket(channel.id);
         if (ticket) {
             ticket.roblox = roblox;
             if (roblox) ticket.robloxUsername = roblox.username;
+            ticket.reportedRoblox = reportedRoblox;
             saveTicket(channel.id, ticket);
         }
-        const updatedEmbed = buildEmbed({
+        const updatedParams = {
             opener, roblox, robloxFetching: false, robloxFailed: roblox === null,
-            reason, type, padNum, reportedInfo, claimed: null,
-        });
-        msg.edit({ embeds: [updatedEmbed] }).catch(err =>
-            console.error('[Ticket] Failed to update embed after Roblox lookup:', err?.message));
+            reason, type, padNum, reportedInfo, reportedRoblox, reportedRobloxFetching: false,
+            claimed: null,
+        };
+        msg.edit({
+            flags: MessageFlags.IsComponentsV2,
+            components: buildTicketComponents(ticketData, updatedParams),
+            allowedMentions: { parse: [] },
+        }).catch(err => console.error('[Ticket] Failed to update container after Roblox lookup:', err?.message));
     }).catch(err => {
         console.error('[Ticket] Roblox lookup failed:', err?.message ?? err);
-        const failEmbed = buildEmbed({
+        const failParams = {
             opener, roblox: null, robloxFetching: false, robloxFailed: true,
-            reason, type, padNum, reportedInfo, claimed: null,
-        });
-        msg.edit({ embeds: [failEmbed] }).catch(() => {});
+            reason, type, padNum, reportedInfo, reportedRoblox: null, reportedRobloxFetching: false,
+            claimed: null,
+        };
+        msg.edit({
+            flags: MessageFlags.IsComponentsV2,
+            components: buildTicketComponents(ticketData, failParams),
+            allowedMentions: { parse: [] },
+        }).catch(() => {});
     });
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Embed builder
-// ─────────────────────────────────────────────────────────────────────────────
-function buildEmbed({ opener, roblox, robloxFetching = false, robloxFailed = false, reason, type, padNum, reportedInfo, claimed }) {
-    const isReport  = type === 'staffreport';
-    const typeLabel = isReport ? 'Staff Report' : 'General Support';
-
-    const embed = new EmbedBuilder()
-        .setColor(isReport ? cfg.colors.foundership : cfg.colors.main)
-        .setTitle(typeLabel)
-        .setDescription(
-            `Hi, <@${opener.id}>! Thank you for contacting the **Florida State Roleplay** Staff Team. ` +
-            `We are always happy to assist you with your ticket. Our staff team is here to help with any ` +
-            `questions or concerns you may have. To ensure you receive the best assistance, please provide ` +
-            `additional details regarding your ticket.`
-        )
-        .setFooter({ text: `Florida State Roleplay  •  Ticket #${padNum}` })
-        .setTimestamp();
-
-    if (roblox) {
-        embed.addFields({
-            name:  'Roblox Information',
-            value: `**Username:** [${roblox.username}](${roblox.profileUrl}) (ID: ${roblox.id})\n**Display Name:** ${roblox.displayName}\n**Account Created:** ${roblox.created}`,
-            inline: false,
-        });
-        if (roblox.avatarUrl) embed.setThumbnail(roblox.avatarUrl);
-    } else if (robloxFailed) {
-        embed.addFields({
-            name:  'Roblox Information',
-            value: '*Could not fetch Roblox account — user may not be verified with Melonly.*',
-            inline: false,
-        });
-    } else if (robloxFetching) {
-        embed.addFields({
-            name:  'Roblox Information',
-            value: '*Fetching account details…*',
-            inline: false,
-        });
-    }
-
-    embed.addFields({
-        name:  'Ticket Reason',
-        value: reason.length > 900 ? reason.substring(0, 900) + '…' : reason,
-        inline: false,
-    });
-
-    if (isReport && reportedInfo) {
-        const reportedValue = reportedInfo.userId
-            ? `<@${reportedInfo.userId}> (${reportedInfo.tag})`
-            : reportedInfo.tag;
-        embed.addFields({
-            name:  'Reported Staff Member',
-            value: reportedValue,
-            inline: false,
-        });
-    }
-
-    embed.addFields({
-        name:  'Claimed By',
-        value: claimed ? `<@${claimed}>` : '*Unclaimed*',
-        inline: false,
-    });
-
-    return embed;
 }
 
 module.exports = {
     handlePanelSelect,
+    handleTestPanelSelect,
     handleGeneralModal,
+    handleGeneralTestModal,
     handleStaffReportModal,
-    buildEmbed,
+    handleStaffReportTestModal,
+    buildContainer,
+    buildTicketComponents,
     buildButtons,
 };

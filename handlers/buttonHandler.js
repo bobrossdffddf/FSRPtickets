@@ -13,7 +13,7 @@ const {
 const cfg = require('../config.json');
 const { getTicket, saveTicket, deleteTicket } = require('../utils/db');
 const { generateTranscript } = require('../utils/transcript');
-const { buildEmbed, buildButtons } = require('./panelHandler');
+const { buildTicketComponents, buildButtons } = require('./panelHandler');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helper — rebuild the pinned embed + buttons and edit the message in-place
@@ -23,7 +23,7 @@ async function _refreshPinnedEmbed(channel, ticket) {
     const pinned = await channel.messages.fetch(ticket.openingMessageId).catch(() => null);
     if (!pinned) return;
 
-    const updated = buildEmbed({
+    const params = {
         opener:        { id: ticket.openerId, username: ticket.openerTag },
         roblox:        ticket.roblox,
         robloxFetching: false,
@@ -34,13 +34,15 @@ async function _refreshPinnedEmbed(channel, ticket) {
         reportedInfo:  ticket.reportedUserId
             ? { userId: ticket.reportedUserId, tag: ticket.reportedUserTag }
             : (ticket.reportedUserTag ? { userId: null, tag: ticket.reportedUserTag } : null),
+        reportedRoblox: ticket.reportedRoblox ?? null,
         claimed:       ticket.claimedBy,
-    });
+    };
 
     await pinned.edit({
-        embeds:     [updated],
-        components: [buildButtons(ticket)],  // toggle label/style reflects new claim state
-    }).catch(err => console.error('[Ticket] Failed to refresh pinned embed:', err?.message));
+        flags:           MessageFlags.IsComponentsV2,
+        components:      buildTicketComponents(ticket, params),
+        allowedMentions: { parse: [] },
+    }).catch(err => console.error('[Ticket] Failed to refresh pinned container:', err?.message));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -264,6 +266,37 @@ async function _closeTicket(channel, guild, closedBy, closeReason = 'No reason p
 
         await transcriptCh.send({ embeds: [infoEmbed], files, components });
     }
+
+    // DM the opener with close details
+    try {
+        const opener = await guild.client.users.fetch(ticket.openerId).catch(() => null);
+        if (opener) {
+            const padNum = String(ticket.ticketNumber).padStart(4, '0');
+            const dmEmbed = new EmbedBuilder()
+                .setColor(cfg.colors.neutral)
+                .setTitle(`Ticket #${padNum} Closed — Florida State Roleplay`)
+                .addFields(
+                    { name: 'Closed By',    value: `${closedBy.username} (<@${closedBy.id}>)`, inline: true },
+                    { name: 'Close Reason', value: closeReason,                                  inline: true },
+                )
+                .setFooter({ text: 'Florida State Roleplay' })
+                .setTimestamp();
+
+            const dmComponents = [];
+            if (transcriptResult?.url) {
+                dmComponents.push(
+                    new ActionRowBuilder().addComponents(
+                        new ButtonBuilder()
+                            .setLabel('View Transcript')
+                            .setStyle(ButtonStyle.Link)
+                            .setURL(transcriptResult.url),
+                    ),
+                );
+            }
+
+            await opener.send({ embeds: [dmEmbed], components: dmComponents }).catch(() => {});
+        }
+    } catch { /* DMs closed or user not fetchable */ }
 
     deleteTicket(channel.id);
     setTimeout(() => channel.delete('Ticket closed').catch(() => {}), 3000);
