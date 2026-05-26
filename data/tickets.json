@@ -209,5 +209,30 @@
     "openedAt": 1779780245634,
     "openingMessageId": "1508732447133536276",
     "noPing": false
+  },
+  "1508847610855686235": {
+    "type": "general",
+    "openerId": "993964942795481088",
+    "openerTag": "lou1e.",
+    "claimedBy": null,
+    "claimedByTag": null,
+    "escalationLevel": 0,
+    "ticketNumber": 59,
+    "reason": "...........",
+    "robloxUsername": "louie_pro12345",
+    "reportedUserId": null,
+    "reportedUserTag": null,
+    "roblox": {
+      "id": "1174806396",
+      "username": "louie_pro12345",
+      "displayName": "sigma",
+      "created": "July 23, 2019 (6 years ago)",
+      "avatarUrl": "https://tr.rbxcdn.com/30DAY-AvatarHeadshot-DB9076D4D160B6B39EE2F924B4AA266E-Png/420/420/AvatarHeadshot/Png/noFilter",
+      "profileUrl": "https://www.roblox.com/users/1174806396/profile"
+    },
+    "reportedRoblox": null,
+    "openedAt": 1779807703817,
+    "openingMessageId": "1508847620574150896",
+    "noPing": false
   }
 }
