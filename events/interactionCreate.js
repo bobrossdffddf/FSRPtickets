@@ -1,5 +1,15 @@
 const { MessageFlags } = require('discord.js');
 const {
+    handlePanelGeneralBtn,
+    handlePanelStaffBtn,
+    handleGsDeptInquiry,
+    handleGsStaffApp,
+    handleGsPunishmentAppeal,
+    handleGsBotIssues,
+    handleGsContinue,
+    handleOpenStaffReportBtn,
+    handleOpenFoundershipReportBtn,
+    handleFoundershipReportModal,
     handlePanelSelect,
     handleTestPanelSelect,
     handleGeneralModal,
@@ -42,6 +52,8 @@ module.exports = {
                     await handleStaffReportModal(interaction, client);
                 } else if (interaction.customId === 'modal_staff_report_test') {
                     await handleStaffReportTestModal(interaction, client);
+                } else if (interaction.customId === 'modal_foundership_report') {
+                    await handleFoundershipReportModal(interaction, client);
                 } else if (interaction.customId === 'modal_close_ticket') {
                     await handleCloseModal(interaction, client);
                 } else if (interaction.customId === 'modal_partnership_apply') {
@@ -51,7 +63,36 @@ module.exports = {
 
             // ── Buttons ────────────────────────────────────────────────────────
             else if (interaction.isButton()) {
-                await handleButton(interaction, client);
+                const { customId } = interaction;
+
+                // ── Main panel buttons ─────────────────────────────────────────
+                if (customId === 'panel_general_btn') {
+                    await handlePanelGeneralBtn(interaction);
+                } else if (customId === 'panel_staff_btn') {
+                    await handlePanelStaffBtn(interaction);
+
+                // ── General Support sub-embed buttons ──────────────────────────
+                } else if (customId === 'gs_dept_inquiry') {
+                    await handleGsDeptInquiry(interaction);
+                } else if (customId === 'gs_staff_app') {
+                    await handleGsStaffApp(interaction);
+                } else if (customId === 'gs_punishment_appeal') {
+                    await handleGsPunishmentAppeal(interaction);
+                } else if (customId === 'gs_bot_issues') {
+                    await handleGsBotIssues(interaction);
+                } else if (customId === 'gs_continue') {
+                    await handleGsContinue(interaction);
+
+                // ── Staff Report panel buttons ─────────────────────────────────
+                } else if (customId === 'open_staff_report') {
+                    await handleOpenStaffReportBtn(interaction);
+                } else if (customId === 'open_foundership_report') {
+                    await handleOpenFoundershipReportBtn(interaction);
+
+                // ── Ticket management buttons ──────────────────────────────────
+                } else {
+                    await handleButton(interaction, client);
+                }
             }
 
         } catch (err) {

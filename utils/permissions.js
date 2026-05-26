@@ -9,24 +9,33 @@ const OPENER_PERMS = [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendM
  * @param {import('discord.js').Guild} guild
  * @param {string} openerId
  * @param {string|null} [claimedBy]
+ * @param {boolean} [hrOnly] - If true, only High Rank and Foundership get access (used for staff reports)
  */
-function buildTicketOverwrites(guild, openerId, claimedBy = null) {
-    const minStaffRole = guild.roles.cache.get(cfg.roles.minStaff);
-    const staffOverwrites = minStaffRole
-        ? guild.roles.cache
-            .filter(r => r.id !== guild.id && !r.managed && r.position >= minStaffRole.position)
-            .map(r => ({ id: r.id, type: OverwriteType.Role,   allow: STAFF_PERMS }))
-        : [
-            { id: cfg.roles.staff,       type: OverwriteType.Role, allow: STAFF_PERMS },
-            { id: cfg.roles.highRank,    type: OverwriteType.Role, allow: STAFF_PERMS },
-            { id: cfg.roles.foundership, type: OverwriteType.Role, allow: STAFF_PERMS },
-        ];
-
+function buildTicketOverwrites(guild, openerId, claimedBy = null, hrOnly = false) {
     const overwrites = [
         { id: guild.id,  type: OverwriteType.Role,   deny:  [PermissionFlagsBits.ViewChannel] },
         { id: openerId,  type: OverwriteType.Member, allow: OPENER_PERMS },
-        ...staffOverwrites,
     ];
+
+    if (hrOnly) {
+        // Explicit allowlist: only High Rank and Foundership — no position guessing
+        overwrites.push(
+            { id: cfg.roles.highRank,    type: OverwriteType.Role, allow: STAFF_PERMS },
+            { id: cfg.roles.foundership, type: OverwriteType.Role, allow: STAFF_PERMS },
+        );
+    } else {
+        const minStaffRole = guild.roles.cache.get(cfg.roles.minStaff);
+        const staffOverwrites = minStaffRole
+            ? guild.roles.cache
+                .filter(r => r.id !== guild.id && !r.managed && r.position >= minStaffRole.position)
+                .map(r => ({ id: r.id, type: OverwriteType.Role, allow: STAFF_PERMS }))
+            : [
+                { id: cfg.roles.staff,       type: OverwriteType.Role, allow: STAFF_PERMS },
+                { id: cfg.roles.highRank,    type: OverwriteType.Role, allow: STAFF_PERMS },
+                { id: cfg.roles.foundership, type: OverwriteType.Role, allow: STAFF_PERMS },
+              ];
+        overwrites.push(...staffOverwrites);
+    }
 
     if (claimedBy) overwrites.push({ id: claimedBy, type: OverwriteType.Member, allow: STAFF_PERMS });
 

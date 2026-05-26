@@ -546,10 +546,6 @@ async function handlePartnershipModal(interaction) {
     };
     _savePartnerships(pending);
 
-    // Move ticket to HR (highRank) category so HR staff can see it
-    const hrCat = await interaction.guild.channels.fetch(cfg.categories.highRank).catch(() => null);
-    if (hrCat) await interaction.channel.setParent(hrCat.id, { lockPermissions: false }).catch(() => {});
-
     // Disable the "Submit Partnership Application" button so it can't be resubmitted
     try {
         const msgs = await interaction.channel.messages.fetch({ limit: 50 });

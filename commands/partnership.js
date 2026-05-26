@@ -12,9 +12,8 @@ const {
 } = require('discord.js');
 
 const cfg        = require('../config.json');
-const { getTicket } = require('../utils/db');
+const { getTicket, saveTicket } = require('../utils/db');
 const { isStaff }   = require('../utils/permissions');
-const { loadSettings } = require('../utils/settings');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -64,14 +63,31 @@ module.exports = {
 
         await interaction.editReply({ embeds: [embed], components: [row] });
 
-        // Rename channel to partnership-{opener} and move to partnerships category
+        // Rename channel to partnership-{opener}
         const safeUsername = ticket.openerTag.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').slice(0, 90);
-        const newName = `partnership-${safeUsername}`;
+        await channel.edit({ name: `partnership-${safeUsername}` })
+            .catch(err => console.error('[Partnership] Failed to rename channel:', err?.message));
 
-        const settings = loadSettings();
-        const editOpts = { name: newName };
-        if (settings.partnershipsCategoryId) editOpts.parent = settings.partnershipsCategoryId;
+        // Escalate to High Rank category (mirrors /escalate level 0 → 1)
+        if (ticket.escalationLevel < 1) {
+            const hrCat = await interaction.guild.channels.fetch(cfg.categories.highRank).catch(() => null);
+            if (hrCat) await channel.setParent(hrCat.id, { lockPermissions: false }).catch(() => {});
 
-        await channel.edit(editOpts).catch(err => console.error('[Partnership] Failed to rename/move channel:', err?.message));
+            await channel.permissionOverwrites.delete(cfg.roles.staff).catch(() => {});
+            await channel.permissionOverwrites.edit(cfg.roles.highRank, {
+                ViewChannel: true, SendMessages: true, ReadMessageHistory: true,
+                AttachFiles: true, EmbedLinks: true,
+            }).catch(() => {});
+
+            if (ticket.claimedBy) {
+                await channel.permissionOverwrites.edit(ticket.claimedBy, {
+                    ViewChannel: true, SendMessages: true, ReadMessageHistory: true,
+                    AttachFiles: true, EmbedLinks: true,
+                }).catch(() => {});
+            }
+
+            ticket.escalationLevel = 1;
+            saveTicket(channel.id, ticket);
+        }
     },
 };

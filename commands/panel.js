@@ -1,34 +1,16 @@
 /**
- * /panel — sends the support panel to the current channel using Discord Components V2.
+ * /panel — sends the FSRP Support Panel to this channel using raw Discord API JSON.
  * Restricted to HR (highRank) and above.
  */
 const {
     SlashCommandBuilder,
-    ContainerBuilder,
-    SeparatorBuilder,
-    TextDisplayBuilder,
-    MediaGalleryBuilder,
-    ActionRowBuilder,
-    StringSelectMenuBuilder,
-    StringSelectMenuOptionBuilder,
     PermissionFlagsBits,
     MessageFlags,
-    SeparatorSpacingSize,
+    Routes,
 } = require('discord.js');
 const cfg            = require('../config.json');
 const { loadImages } = require('../utils/images');
 const { isHighRank } = require('../utils/permissions');
-
-const E = {
-    fsrp:   '<:FSRP:1500172509826383922>',
-    ticket: '<:ticket:1491123553985232946>',
-    shield: '<:shield:1491123625762492558>',
-    info:   '<:information:1492185664211386561>',
-};
-
-function hexToInt(hex) {
-    return parseInt(hex.replace('#', ''), 16);
-}
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -39,78 +21,54 @@ module.exports = {
     async execute(interaction) {
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-        const member = interaction.member;
-        if (!isHighRank(member, interaction.guild)) {
+        if (!isHighRank(interaction.member, interaction.guild)) {
             return interaction.editReply({ content: 'This command requires the High Rank role or above.' });
         }
 
-        const imgs = loadImages();
-        const topBannerUrl    = imgs.topBanner    ?? null;
-        const bottomBannerUrl = imgs.bottomBanner ?? imgs.banner ?? null;
+        const imgs      = loadImages();
+        const topUrl    = imgs.topBanner    ?? null;
+        const bottomUrl = imgs.bottomBanner ?? imgs.banner ?? null;
 
-        const container = new ContainerBuilder().setAccentColor(hexToInt(cfg.colors.main));
+        const inner = [];
+        if (topUrl) inner.push({ type: 12, items: [{ media: { url: topUrl } }] });
 
-        if (topBannerUrl) {
-            container.addMediaGalleryComponents(
-                new MediaGalleryBuilder().addItems({ media: { url: topBannerUrl } })
-            );
-        }
-
-        container
-            .addTextDisplayComponents(
-                new TextDisplayBuilder().setContent(
-                    `## ${E.fsrp}  FSRP: Florida State Roleplay | Support Portal\n\n` +
-                    `${E.info} **Welcome to FSRP Support.**\n` +
-                    `We are here to help! Please create a ticket and a member of our staff team will assist you with any questions or concerns.`
-                )
-            )
-            .addSeparatorComponents(
-                new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Large)
-            )
-            .addTextDisplayComponents(
-                new TextDisplayBuilder().setContent(
-                    `${E.ticket}  **General Support**\n` +
-                    `> Questions, concerns, partnership inquiries, verifications, and general help.\n\n` +
-                    `${E.shield}  **Staff Report**\n` +
-                    `> Report a staff member for misconduct, abuse of power, or rule violations.`
-                )
-            )
-            .addSeparatorComponents(
-                new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Large)
-            )
-            .addTextDisplayComponents(
-                new TextDisplayBuilder().setContent('Select a category below to open a ticket.')
-            );
-
-        if (bottomBannerUrl) {
-            container.addMediaGalleryComponents(
-                new MediaGalleryBuilder().addItems({ media: { url: bottomBannerUrl } })
-            );
-        }
-
-        const row = new ActionRowBuilder().addComponents(
-            new StringSelectMenuBuilder()
-                .setCustomId('ticket_panel_select')
-                .setPlaceholder('Select a support category…')
-                .addOptions(
-                    new StringSelectMenuOptionBuilder()
-                        .setLabel('General Support')
-                        .setDescription('Questions, concerns, partnerships, and general help.')
-                        .setValue('general')
-                        .setEmoji({ id: '1491123553985232946', name: 'ticket' }),
-                    new StringSelectMenuOptionBuilder()
-                        .setLabel('Staff Report')
-                        .setDescription('Report a staff member for misconduct or rule violations.')
-                        .setValue('staffreport')
-                        .setEmoji({ id: '1491123625762492558', name: 'shield' }),
-                )
-        );
-
-        await interaction.channel.send({
-            flags: MessageFlags.IsComponentsV2,
-            components: [container, row],
+        inner.push({
+            type: 10,
+            content: '# <:FSRP:1500172509826383922> FSRP Support Panel\nWelcome to the Florida State Roleplay support panel. Use this as a tool to request help, insight, ask questions, or make reports. A member of our staff team will assist you as soon as possible after you create a ticket.',
         });
 
-        await interaction.editReply({ content: `${E.fsrp} Panel sent successfully.` });
+        inner.push({ type: 14 });
+
+        inner.push({
+            type: 10,
+            content: '-# Please note that by creating a ticket using the FSRP Ticket bot you agree to follow all server rules and discord TOS. Your ticket can be closed at any time for any reason that our staff sees fit. Abuse of tickets can lead to punishment up to a permanent ban from the server and it subsidiaries.',
+        });
+
+        inner.push({ type: 14 });
+
+        inner.push({
+            type: 1,
+            components: [
+                { style: 2, type: 2, label: 'General Support', emoji: { id: '1492185922467401911', name: 'website',       animated: false }, custom_id: 'panel_general_btn' },
+                { style: 4, type: 2, label: 'Staff Report',    emoji: { id: '1492185629214245066', name: 'tts_ban_white', animated: false }, custom_id: 'panel_staff_btn'   },
+            ],
+        });
+
+        inner.push({ type: 14 });
+
+        if (bottomUrl) inner.push({ type: 12, items: [{ media: { url: bottomUrl } }] });
+
+        await interaction.client.rest.post(
+            Routes.channelMessages(interaction.channelId),
+            {
+                body: {
+                    flags: 32768,
+                    components: [{ type: 17, components: inner }],
+                    allowed_mentions: { parse: [] },
+                },
+            }
+        );
+
+        await interaction.editReply({ content: '<:FSRP:1500172509826383922> Panel sent successfully.' });
     },
 };
