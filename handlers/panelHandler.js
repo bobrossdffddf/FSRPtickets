@@ -10,6 +10,8 @@ const {
     SeparatorBuilder,
     TextDisplayBuilder,
     MediaGalleryBuilder,
+    SectionBuilder,
+    ThumbnailBuilder,
     SeparatorSpacingSize,
     ChannelType,
     PermissionFlagsBits,
@@ -21,6 +23,7 @@ const cfg               = require('../config.json');
 const { getRobloxInfo } = require('../utils/roblox');
 const { loadImages }    = require('../utils/images');
 const { getAllTickets, getTicket, saveTicket, nextTicketNumber } = require('../utils/db');
+const { buildTicketOverwrites } = require('../utils/permissions');
 
 function hexToInt(hex) {
     return parseInt(hex.replace('#', ''), 16);
@@ -46,7 +49,7 @@ function buildButtons(ticket) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Container builder for ticket messages (Components V2)
 // ─────────────────────────────────────────────────────────────────────────────
-function buildContainer({ opener, roblox, robloxFetching = false, robloxFailed = false, reason, type, padNum, reportedInfo, reportedRoblox = null, reportedRobloxFetching = false, claimed }) {
+function buildContainer({ opener, roblox, robloxFetching = false, robloxFailed = false, reason, type, padNum, reportedInfo, reportedRoblox = null, reportedRobloxFetching = false, claimed, noPing = false }) {
     const isReport    = type === 'staffreport';
     const imgs        = loadImages();
     const topBannerUrl    = imgs.topBanner    ?? null;
@@ -55,40 +58,46 @@ function buildContainer({ opener, roblox, robloxFetching = false, robloxFailed =
     const E_ticket = '<:ticket:1491123553985232946>';
     const E_shield = '<:shield:1491123625762492558>';
 
-    let content = `## ${isReport ? E_shield : E_ticket}  ${isReport ? 'Staff Report' : 'General Support'} — Ticket #${padNum}\n\n`;
-    content += `Hi, <@${opener.id}>! Thank you for contacting **Florida State Roleplay** Support.\n`;
-    content += `Our staff team will be with you shortly. Please provide any additional details if needed.\n\n`;
+    // ── Part 1: header + intro ────────────────────────────────────────────────
+    let headerContent = `## ${isReport ? E_shield : E_ticket}  ${isReport ? 'Staff Report' : 'General Support'} — Ticket #${padNum}\n\n`;
+    if (noPing) headerContent += `> ⚠️ **TEST MODE** — No notifications sent.\n\n`;
+    headerContent += `Hi, <@${opener.id}>! Thank you for contacting **Florida State Roleplay** Support.\n`;
+    headerContent += `Our staff team will be with you shortly. Please provide any additional details if needed.`;
 
+    // ── Part 2: opener Roblox block ───────────────────────────────────────────
+    let robloxContent;
     if (robloxFetching) {
-        content += `**Roblox Account:** *Fetching details…*\n\n`;
+        robloxContent = `**Roblox Account:** *Fetching details…*`;
     } else if (roblox) {
-        content += `**Roblox Account:** [${roblox.username}](${roblox.profileUrl}) (\`${roblox.id}\`) · ${roblox.displayName}\n`;
-        content += `**Account Created:** ${roblox.created}\n\n`;
+        robloxContent  = `**Roblox Account:** [${roblox.username}](${roblox.profileUrl}) (\`${roblox.id}\`) · ${roblox.displayName}\n`;
+        robloxContent += `**Account Created:** ${roblox.created}`;
     } else {
-        content += `**Roblox Account:** *Not found — user may not be verified with Melonly.*\n\n`;
+        robloxContent = `**Roblox Account:** *Not found — user may not be verified with Melonly.*`;
     }
 
+    // ── Part 3: reason, reported info, claimed, footer ───────────────────────
     const safeReason = reason.length > 900 ? reason.substring(0, 900) + '…' : reason;
-    content += `**Ticket Reason:**\n> ${safeReason.replace(/\n/g, '\n> ')}\n\n`;
+    let bodyContent = `**Ticket Reason:**\n> ${safeReason.replace(/\n/g, '\n> ')}\n\n`;
 
     if (isReport && reportedInfo) {
         const val = reportedInfo.userId
             ? `<@${reportedInfo.userId}> (${reportedInfo.tag})`
             : reportedInfo.tag;
-        content += `**Reported Staff Member:** ${val}\n`;
+        bodyContent += `**Reported Staff Member:** ${val}\n`;
         if (reportedRobloxFetching) {
-            content += `**Their Roblox Account:** *Fetching details…*\n\n`;
+            bodyContent += `**Their Roblox Account:** *Fetching details…*\n\n`;
         } else if (reportedRoblox) {
-            content += `**Their Roblox Account:** [${reportedRoblox.username}](${reportedRoblox.profileUrl}) (\`${reportedRoblox.id}\`) · ${reportedRoblox.displayName}\n`;
-            content += `**Account Created:** ${reportedRoblox.created}\n\n`;
+            bodyContent += `**Their Roblox Account:** [${reportedRoblox.username}](${reportedRoblox.profileUrl}) (\`${reportedRoblox.id}\`) · ${reportedRoblox.displayName}\n`;
+            bodyContent += `**Account Created:** ${reportedRoblox.created}\n\n`;
         } else {
-            content += `**Their Roblox Account:** *Not found — may not be verified.*\n\n`;
+            bodyContent += `**Their Roblox Account:** *Not found — may not be verified.*\n\n`;
         }
     }
 
-    content += `**Claimed By:** ${claimed ? `<@${claimed}>` : '*Unclaimed*'}\n\n`;
-    content += `-# Florida State Roleplay  •  Ticket #${padNum}`;
+    bodyContent += `**Claimed By:** ${claimed ? `<@${claimed}>` : '*Unclaimed*'}\n\n`;
+    bodyContent += `-# Florida State Roleplay  •  Ticket #${padNum}`;
 
+    // ── Assemble container ────────────────────────────────────────────────────
     const container = new ContainerBuilder()
         .setAccentColor(hexToInt(isReport ? cfg.colors.foundership : cfg.colors.main));
 
@@ -98,7 +107,20 @@ function buildContainer({ opener, roblox, robloxFetching = false, robloxFailed =
         );
     }
 
-    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(content));
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(headerContent));
+
+    // Roblox block: show avatar thumbnail when available, plain text otherwise
+    if (roblox?.avatarUrl) {
+        container.addSectionComponents(
+            new SectionBuilder()
+                .addTextDisplayComponents(new TextDisplayBuilder().setContent(robloxContent))
+                .setThumbnailAccessory(new ThumbnailBuilder().setURL(roblox.avatarUrl))
+        );
+    } else {
+        container.addTextDisplayComponents(new TextDisplayBuilder().setContent(robloxContent));
+    }
+
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(bodyContent));
 
     if (bottomBannerUrl) {
         container.addMediaGalleryComponents(
@@ -109,21 +131,11 @@ function buildContainer({ opener, roblox, robloxFetching = false, robloxFailed =
     return container;
 }
 
-// Builds the full component list for a ticket message (ping display + container + buttons)
+// Builds the full component list for a ticket message (container + buttons)
 function buildTicketComponents(ticketData, embedParams) {
-    const container  = buildContainer(embedParams);
-    const buttons    = buildButtons(ticketData);
-    const components = [];
-
-    if (!ticketData.noPing) {
-        const notifyRole = ticketData.type === 'staffreport' ? cfg.roles.highRank : cfg.roles.staff;
-        components.push(
-            new TextDisplayBuilder().setContent(`<@${ticketData.openerId}> — <@&${notifyRole}>`)
-        );
-    }
-
-    components.push(container, buttons);
-    return components;
+    const container = buildContainer({ ...embedParams, noPing: ticketData.noPing });
+    const buttons   = buildButtons(ticketData);
+    return [container, buttons];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -316,13 +328,7 @@ async function createTicket(interaction, type, reason, reportedInfo, noPing = fa
         type:   ChannelType.GuildText,
         parent: parentCategory,
         topic:  `Ticket #${padNum} | ${isReport ? 'Staff Report' : 'General Support'} | ${opener.username}`,
-        permissionOverwrites: [
-            { id: guild.id,              deny:  [PermissionFlagsBits.ViewChannel] },
-            { id: opener.id,             allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.AttachFiles, PermissionFlagsBits.EmbedLinks] },
-            { id: cfg.roles.staff,       allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.ManageMessages, PermissionFlagsBits.AttachFiles, PermissionFlagsBits.EmbedLinks] },
-            { id: cfg.roles.highRank,    allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.ManageMessages, PermissionFlagsBits.AttachFiles, PermissionFlagsBits.EmbedLinks] },
-            { id: cfg.roles.foundership, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.ManageMessages, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.AttachFiles, PermissionFlagsBits.EmbedLinks] },
-        ],
+        permissionOverwrites: buildTicketOverwrites(guild, opener.id),
     });
 
     // ── 2. Build ticket data ──────────────────────────────────────────────────
@@ -352,10 +358,21 @@ async function createTicket(interaction, type, reason, reportedInfo, noPing = fa
         claimed: null,
     };
 
+    // Discord's allowedMentions doesn't trigger notifications in Components V2 text.
+    // Send a plain message first so @user and @role are actually notified, then delete it.
+    if (!noPing) {
+        const notifyRole = isReport ? cfg.roles.highRank : cfg.roles.staff;
+        const pingMsg = await channel.send({
+            content: `<@${opener.id}> <@&${notifyRole}>`,
+            allowedMentions: { parse: ['users', 'roles'] },
+        }).catch(() => null);
+        pingMsg?.delete().catch(() => {});
+    }
+
     const msg = await channel.send({
         flags: MessageFlags.IsComponentsV2,
         components: buildTicketComponents(ticketData, initialParams),
-        allowedMentions: noPing ? { parse: [] } : { parse: ['users', 'roles'] },
+        allowedMentions: { parse: [] },
     });
 
     await msg.pin().catch(() => {});

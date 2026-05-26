@@ -1,6 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 const cfg           = require('../config.json');
 const { getTicket } = require('../utils/db');
+const { isStaff }   = require('../utils/permissions');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -17,11 +18,8 @@ module.exports = {
         const ticket = getTicket(interaction.channelId);
         if (!ticket) return interaction.reply({ content: 'This can only be used inside a ticket channel.', flags: MessageFlags.Ephemeral });
 
-        const member  = interaction.member;
-        const isStaff = member.roles.cache.has(cfg.roles.staff) ||
-                        member.roles.cache.has(cfg.roles.highRank) ||
-                        member.roles.cache.has(cfg.roles.foundership);
-        if (!isStaff && interaction.user.id !== ticket.openerId) {
+        const member = interaction.member;
+        if (!isStaff(member, interaction.guild) && interaction.user.id !== ticket.openerId) {
             return interaction.reply({ content: 'Only staff or the ticket opener can rename this ticket.', flags: MessageFlags.Ephemeral });
         }
 

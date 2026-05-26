@@ -17,6 +17,7 @@ const {
 } = require('discord.js');
 const cfg            = require('../config.json');
 const { loadImages } = require('../utils/images');
+const { isHighRank } = require('../utils/permissions');
 
 const E = {
     fsrp:   '<:FSRP:1500172509826383922>',
@@ -39,9 +40,7 @@ module.exports = {
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
         const member = interaction.member;
-        const isHR = member.roles.cache.has(cfg.roles.highRank) ||
-                     member.roles.cache.has(cfg.roles.foundership);
-        if (!isHR) {
+        if (!isHighRank(member, interaction.guild)) {
             return interaction.editReply({ content: 'This command requires the High Rank role or above.' });
         }
 

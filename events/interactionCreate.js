@@ -1,3 +1,4 @@
+const { MessageFlags } = require('discord.js');
 const {
     handlePanelSelect,
     handleTestPanelSelect,
@@ -6,7 +7,8 @@ const {
     handleStaffReportModal,
     handleStaffReportTestModal,
 } = require('../handlers/panelHandler');
-const { handleButton, handleCloseModal } = require('../handlers/buttonHandler');
+const { handleButton, handleCloseModal, handlePartnershipModal } = require('../handlers/buttonHandler');
+const { handleTranscriptIndexSelect } = require('../utils/transcriptIndex');
 
 module.exports = {
     name: 'interactionCreate',
@@ -25,6 +27,8 @@ module.exports = {
                     await handlePanelSelect(interaction, client);
                 } else if (interaction.customId === 'ticket_test_select') {
                     await handleTestPanelSelect(interaction, client);
+                } else if (interaction.customId === 'transcript_index_select') {
+                    await handleTranscriptIndexSelect(interaction);
                 }
             }
 
@@ -40,6 +44,8 @@ module.exports = {
                     await handleStaffReportTestModal(interaction, client);
                 } else if (interaction.customId === 'modal_close_ticket') {
                     await handleCloseModal(interaction, client);
+                } else if (interaction.customId === 'modal_partnership_apply') {
+                    await handlePartnershipModal(interaction, client);
                 }
             }
 
@@ -50,7 +56,7 @@ module.exports = {
 
         } catch (err) {
             console.error('[interactionCreate] Unhandled error:', err);
-            const payload = { content: '⚠️ An unexpected error occurred. Please try again.', ephemeral: true };
+            const payload = { content: '⚠️ An unexpected error occurred. Please try again.', flags: MessageFlags.Ephemeral };
             if (interaction.replied || interaction.deferred) {
                 await interaction.followUp(payload).catch(() => {});
             } else {

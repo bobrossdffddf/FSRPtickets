@@ -1,6 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
 const cfg = require('../config.json');
 const { getTicket, saveTicket } = require('../utils/db');
+const { isStaff } = require('../utils/permissions');
 
 const LEVELS = [
     { name: 'Staff',       color: cfg.colors.main,        roleKey: 'staff',       catKey: 'general'     },
@@ -19,11 +20,8 @@ module.exports = {
         const ticket = getTicket(interaction.channelId);
         if (!ticket) return interaction.editReply({ content: 'This can only be used inside a ticket channel.' });
 
-        const member  = interaction.member;
-        const isStaff = member.roles.cache.has(cfg.roles.staff) ||
-                        member.roles.cache.has(cfg.roles.highRank) ||
-                        member.roles.cache.has(cfg.roles.foundership);
-        if (!isStaff) return interaction.editReply({ content: 'Only staff members can escalate tickets.' });
+        const member = interaction.member;
+        if (!isStaff(member, interaction.guild)) return interaction.editReply({ content: 'Only staff members can escalate tickets.' });
 
         if (ticket.escalationLevel >= 2) {
             return interaction.editReply({ content: 'This ticket is already at Foundership level.' });

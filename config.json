@@ -2,6 +2,7 @@
   "guildId": "1487127237584224441",
 
   "roles": {
+    "minStaff":    "1500198951117258802",
     "staff":       "1487127237898666070",
     "highRank":    "1487127238058180810",
     "foundership": "1487127238141935635"
@@ -20,12 +21,12 @@
   "dismissRoleId": "1487127238058180810",
 
   "colors": {
-    "main":        "#7A2C29",
-    "highRank":    "#E65100",
-    "foundership": "#B71C1C",
-    "success":     "#1B5E20",
-    "warning":     "#F57F17",
-    "neutral":     "#263238"
+    "main":        "#242429",
+    "highRank":    "#242429",
+    "foundership": "#242429",
+    "success":     "#242429",
+    "warning":     "#242429",
+    "neutral":     "#242429"
   },
 
   "images": {

@@ -16,33 +16,47 @@ const path = require('path');
 
 const cfg            = require('../config.json');
 const TRANSCRIPT_DIR = path.join(__dirname, '../data/transcripts');
+const IMAGES_DIR     = path.join(__dirname, '../data/images');
+
+const IMAGE_MIME = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp' };
 
 let _server = null;
 
 function start() {
     const port = cfg.transcriptServer?.port ?? 3000;
 
+    if (!fs.existsSync(IMAGES_DIR)) fs.mkdirSync(IMAGES_DIR, { recursive: true });
+
     _server = http.createServer((req, res) => {
-        // Only allow /transcripts/<filename>.html  —  no path traversal
-        const match = req.url.match(/^\/transcripts\/([^/]+\.html)$/);
-        if (!match) {
-            res.writeHead(404, { 'Content-Type': 'text/plain' });
-            return res.end('Not found');
+        // /transcripts/<filename>.html
+        const transcriptMatch = req.url.match(/^\/transcripts\/([^/]+\.html)$/);
+        if (transcriptMatch) {
+            const filepath = path.join(TRANSCRIPT_DIR, transcriptMatch[1]);
+            if (!fs.existsSync(filepath)) {
+                res.writeHead(404, { 'Content-Type': 'text/plain' });
+                return res.end('Transcript not found');
+            }
+            res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+            return fs.createReadStream(filepath).pipe(res);
         }
 
-        const filename = match[1];                       // already validated: no slashes
-        const filepath = path.join(TRANSCRIPT_DIR, filename);
-
-        if (!fs.existsSync(filepath)) {
-            res.writeHead(404, { 'Content-Type': 'text/plain' });
-            return res.end('Transcript not found');
+        // /images/<filename>
+        const imageMatch = req.url.match(/^\/images\/([^/]+)$/);
+        if (imageMatch) {
+            const filename = imageMatch[1];
+            const filepath = path.join(IMAGES_DIR, filename);
+            if (!fs.existsSync(filepath)) {
+                res.writeHead(404, { 'Content-Type': 'text/plain' });
+                return res.end('Image not found');
+            }
+            const ext  = path.extname(filename).slice(1).toLowerCase();
+            const mime = IMAGE_MIME[ext] || 'application/octet-stream';
+            res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': 'public, max-age=31536000' });
+            return fs.createReadStream(filepath).pipe(res);
         }
 
-        res.writeHead(200, {
-            'Content-Type':  'text/html; charset=utf-8',
-            'Cache-Control': 'no-store',
-        });
-        fs.createReadStream(filepath).pipe(res);
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        return res.end('Not found');
     });
 
     _server.listen(port, () => {
@@ -72,4 +86,10 @@ function getTranscriptUrl(filename) {
     return `${base}/transcripts/${filename}`;
 }
 
-module.exports = { start, getTranscriptUrl };
+function getImageUrl(filename) {
+    const base = (cfg.transcriptServer?.publicUrl ?? `http://localhost:${cfg.transcriptServer?.port ?? 3000}`)
+        .replace(/\/$/, '');
+    return `${base}/images/${filename}`;
+}
+
+module.exports = { start, getTranscriptUrl, getImageUrl, IMAGES_DIR };

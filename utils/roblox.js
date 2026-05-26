@@ -35,7 +35,11 @@ async function lookupViaMelonly(discordUserId) {
     }
 
     if (!res.ok) {
-        if (res.status !== 404) console.warn(`[Melonly] HTTP ${res.status} for Discord ${discordUserId}`);
+        if (res.status === 401) {
+            console.error('[Melonly] API key is invalid or expired — update MELONLY_API_KEY in .env');
+        } else if (res.status !== 404) {
+            console.warn(`[Melonly] HTTP ${res.status} for Discord ${discordUserId}`);
+        }
         return null;
     }
 

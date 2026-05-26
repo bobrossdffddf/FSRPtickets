@@ -6,8 +6,9 @@ const {
     ActionRowBuilder,
     MessageFlags,
 } = require('discord.js');
-const cfg           = require('../config.json');
-const { getTicket } = require('../utils/db');
+const cfg                  = require('../config.json');
+const { getTicket }        = require('../utils/db');
+const { isStaff }          = require('../utils/permissions');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -19,12 +20,9 @@ module.exports = {
         if (!ticket) return interaction.reply({ content: 'This can only be used inside a ticket channel.', flags: MessageFlags.Ephemeral });
 
         const member   = interaction.member;
-        const isStaff  = member.roles.cache.has(cfg.roles.staff) ||
-                         member.roles.cache.has(cfg.roles.highRank) ||
-                         member.roles.cache.has(cfg.roles.foundership);
         const isOpener = interaction.user.id === ticket.openerId;
 
-        if (!isStaff && !isOpener) {
+        if (!isStaff(member, interaction.guild) && !isOpener) {
             return interaction.reply({ content: 'You do not have permission to close this ticket.', flags: MessageFlags.Ephemeral });
         }
 

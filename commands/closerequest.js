@@ -1,6 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 const cfg           = require('../config.json');
 const { getTicket } = require('../utils/db');
+const { isStaff }   = require('../utils/permissions');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -11,11 +12,8 @@ module.exports = {
         const ticket = getTicket(interaction.channelId);
         if (!ticket) return interaction.reply({ content: 'This can only be used inside a ticket channel.', flags: MessageFlags.Ephemeral });
 
-        const member  = interaction.member;
-        const isStaff = member.roles.cache.has(cfg.roles.staff) ||
-                        member.roles.cache.has(cfg.roles.highRank) ||
-                        member.roles.cache.has(cfg.roles.foundership);
-        if (!isStaff) return interaction.reply({ content: 'Only staff can send a close request.', flags: MessageFlags.Ephemeral });
+        const member = interaction.member;
+        if (!isStaff(member, interaction.guild)) return interaction.reply({ content: 'Only staff can send a close request.', flags: MessageFlags.Ephemeral });
 
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId('closereq_accept').setLabel('Accept — Close Ticket').setStyle(ButtonStyle.Success),

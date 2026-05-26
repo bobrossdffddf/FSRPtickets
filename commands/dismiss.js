@@ -1,6 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 const cfg = require('../config.json');
 const { getTicket, saveTicket } = require('../utils/db');
+const { isHighRank } = require('../utils/permissions');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -9,10 +10,7 @@ module.exports = {
 
     async execute(interaction) {
         const member = interaction.member;
-        const hasPermission = member.roles.cache.has(cfg.roles.highRank) ||
-                              member.roles.cache.has(cfg.roles.foundership);
-
-        if (!hasPermission) {
+        if (!isHighRank(member, interaction.guild)) {
             return interaction.reply({ content: 'High Rank or above required to use this command.', flags: MessageFlags.Ephemeral });
         }
 
