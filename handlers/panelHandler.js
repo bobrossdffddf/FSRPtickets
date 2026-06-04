@@ -801,7 +801,7 @@ async function createTicket(interaction, type, reason, reportedInfo, noPing = fa
         type:   ChannelType.GuildText,
         parent: parentCategory,
         topic:  `Ticket #${padNum} | ${isReport ? 'Staff Report' : 'General Support'} | ${opener.username}`,
-        permissionOverwrites: buildTicketOverwrites(guild, opener.id, null, isReport),
+        permissionOverwrites: buildTicketOverwrites(guild, opener.id, null, isReport ? 'hr' : 'gen'),
     });
 
     // ── 2. Build ticket data ──────────────────────────────────────────────────

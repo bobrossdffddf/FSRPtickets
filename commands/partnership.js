@@ -73,11 +73,15 @@ module.exports = {
             const hrCat = await interaction.guild.channels.fetch(cfg.categories.highRank).catch(() => null);
             if (hrCat) await channel.setParent(hrCat.id, { lockPermissions: false }).catch(() => {});
 
-            await channel.permissionOverwrites.delete(cfg.roles.staff).catch(() => {});
-            await channel.permissionOverwrites.edit(cfg.roles.highRank, {
-                ViewChannel: true, SendMessages: true, ReadMessageHistory: true,
-                AttachFiles: true, EmbedLinks: true,
-            }).catch(() => {});
+            for (const roleId of cfg.ticketRoles.gen) {
+                await channel.permissionOverwrites.delete(roleId).catch(() => {});
+            }
+            for (const roleId of cfg.ticketRoles.hr) {
+                await channel.permissionOverwrites.edit(roleId, {
+                    ViewChannel: true, SendMessages: true, ReadMessageHistory: true,
+                    AttachFiles: true, EmbedLinks: true,
+                }).catch(() => {});
+            }
 
             if (ticket.claimedBy) {
                 await channel.permissionOverwrites.edit(ticket.claimedBy, {

@@ -1,12 +1,12 @@
 const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
 const cfg = require('../config.json');
 const { getTicket, saveTicket } = require('../utils/db');
-const { isStaff } = require('../utils/permissions');
+const { isStaff, LEVEL_TYPE } = require('../utils/permissions');
 
 const LEVELS = [
-    { name: 'Staff',       color: cfg.colors.main,        roleKey: 'staff',       catKey: 'general'     },
-    { name: 'High Rank',   color: cfg.colors.highRank,    roleKey: 'highRank',    catKey: 'highRank'    },
-    { name: 'Foundership', color: cfg.colors.foundership, roleKey: 'foundership', catKey: 'foundership' },
+    { name: 'Staff',       color: cfg.colors.main,        typeKey: 'gen',         catKey: 'general'     },
+    { name: 'High Rank',   color: cfg.colors.highRank,    typeKey: 'hr',          catKey: 'highRank'    },
+    { name: 'Foundership', color: cfg.colors.foundership, typeKey: 'foundership', catKey: 'foundership' },
 ];
 
 module.exports = {
@@ -36,14 +36,18 @@ module.exports = {
         const newCat = await guild.channels.fetch(cfg.categories[LEVELS[newLevel].catKey]).catch(() => null);
         if (newCat) await channel.setParent(newCat.id, { lockPermissions: false });
 
-        // Remove old tier's role
-        await channel.permissionOverwrites.delete(cfg.roles[LEVELS[oldLevel].roleKey]).catch(() => {});
+        // Remove all old tier roles
+        for (const roleId of cfg.ticketRoles[LEVELS[oldLevel].typeKey]) {
+            await channel.permissionOverwrites.delete(roleId).catch(() => {});
+        }
 
-        // Add new tier's role
-        await channel.permissionOverwrites.edit(cfg.roles[LEVELS[newLevel].roleKey], {
-            ViewChannel: true, SendMessages: true, ReadMessageHistory: true,
-            AttachFiles: true, EmbedLinks: true,
-        });
+        // Add all new tier roles
+        for (const roleId of cfg.ticketRoles[LEVELS[newLevel].typeKey]) {
+            await channel.permissionOverwrites.edit(roleId, {
+                ViewChannel: true, SendMessages: true, ReadMessageHistory: true,
+                AttachFiles: true, EmbedLinks: true,
+            });
+        }
 
         // Claimer keeps individual access
         if (ticket.claimedBy) {
